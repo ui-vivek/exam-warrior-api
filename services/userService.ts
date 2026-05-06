@@ -1,5 +1,5 @@
-import users from '@/model/userModel';
+import { User } from '@/model/user.model';
 
-export function getUsers() {
-  return users;
+export async function getUsers() {
+  return await User.find();
 }
