@@ -29,7 +29,7 @@ app.get('/', (req: Request, res: Response) => {
   res.sendFile(path.join(projectRoot, 'view', 'index.html'));
 });
 
-app.use('/api', apiRouter);
+app.use('/api/v1', apiRouter);
 
 // Error Handling
 app.use(notFoundHandler);

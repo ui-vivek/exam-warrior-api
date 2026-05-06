@@ -15,7 +15,22 @@ export class OtpService {
       return { success: false, message: 'Please enter a valid 10-digit phone number', code: 'INVALID_PHONE' };
     }
 
-    // 2. Rate limit: max 3 OTPs per phone per 5 minutes
+    // 2. Check for Account Lockout
+    const existingLock = await OtpStore.findOne({ 
+      phone, 
+      lockedUntil: { $gt: new Date() } 
+    });
+
+    if (existingLock) {
+      const minutesLeft = Math.ceil((existingLock.lockedUntil!.getTime() - Date.now()) / 60000);
+      return { 
+        success: false, 
+        message: `Account is locked due to too many failed attempts. Please try again after ${minutesLeft} minutes.`, 
+        code: 'ACCOUNT_LOCKED' 
+      };
+    }
+
+    // 3. Rate limit: max 3 OTPs per phone per 5 minutes
     const recentOtps = await OtpStore.countDocuments({
       phone,
       createdAt: { $gte: new Date(Date.now() - 300000) } 
@@ -42,7 +57,7 @@ export class OtpService {
       return { success: true, message: 'OTP sent successfully' };
     }
 
-    // 3. Tracking in Database
+    // 4. Tracking in Database
     await OtpStore.create({
       phone,
       otpHash: 'MANAGED_BY_TWILIO',
@@ -50,7 +65,7 @@ export class OtpService {
       expiresAt: new Date(Date.now() + 600000),
     });
 
-    // 4. Send via Twilio Verify
+    // 5. Send via Twilio Verify
     const sent = await this.sendViaTwilioVerify(phone);
 
     if (!sent) {
@@ -81,6 +96,18 @@ export class OtpService {
   }
 
   static async verifyOtp(phone: string, otp: string): Promise<boolean> {
+    // 0. Check lockout first
+    const existingLock = await OtpStore.findOne({ 
+      phone, 
+      lockedUntil: { $gt: new Date() } 
+    });
+
+    if (existingLock) {
+      const error: any = new Error('Account is temporarily locked.');
+      error.code = 'ACCOUNT_LOCKED';
+      throw error;
+    }
+
     if (this.DUMMY_NUMBERS.includes(phone)) {
       if (otp === this.DUMMY_OTP) {
         await OtpStore.deleteMany({ phone });
@@ -101,15 +128,26 @@ export class OtpService {
           await OtpStore.deleteMany({ phone });
           return true;
         } else {
-          // If verification fails, increment attempts in our DB for tracking
-          await OtpStore.findOneAndUpdate(
+          // Increment attempts and check for lockout
+          const updatedRecord = await OtpStore.findOneAndUpdate(
             { phone, otpHash: 'MANAGED_BY_TWILIO' }, 
             { $inc: { attempts: 1 } },
-            { sort: { createdAt: -1 } }
+            { sort: { createdAt: -1 }, new: true }
           );
+
+          if (updatedRecord && updatedRecord.attempts >= 5) {
+            await OtpStore.updateOne(
+              { _id: updatedRecord._id },
+              { $set: { lockedUntil: new Date(Date.now() + 1800000) } } // 30 minutes
+            );
+            const error: any = new Error('Too many failed attempts. Account locked for 30 minutes.');
+            error.code = 'ACCOUNT_LOCKED';
+            throw error;
+          }
         }
       }
     } catch (error: any) {
+      if (error.code === 'ACCOUNT_LOCKED') throw error;
       console.error('Error verifying Twilio OTP:', error.message);
     }
 

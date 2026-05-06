@@ -19,7 +19,10 @@ export const requestOtp = async (req: Request, res: Response) => {
       data: {} 
     });
   } catch (error: any) {
-    const statusCode = error.code === 'RATE_LIMIT' ? 429 : 400;
+    let statusCode = 400;
+    if (error.code === 'RATE_LIMIT' || error.code === 'ACCOUNT_LOCKED') {
+      statusCode = 429;
+    }
     res.status(statusCode).json({ 
       success: false, 
       message: error.message,
@@ -46,10 +49,19 @@ export const verifyOtp = async (req: Request, res: Response) => {
       data: result
     });
   } catch (error: any) {
-    res.status(400).json({ 
+    let statusCode = 400;
+    
+    // DoD: Wrong OTP -> 401
+    if (error.message === 'Invalid or expired OTP') {
+      statusCode = 401;
+    } else if (error.code === 'ACCOUNT_LOCKED') {
+      statusCode = 429; // Too Many Requests
+    }
+
+    res.status(statusCode).json({ 
       success: false, 
       message: error.message,
-      data: {}
+      data: { code: error.code || 'VERIFICATION_FAILED' }
     });
   }
 };
