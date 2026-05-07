@@ -25,3 +25,5 @@ yarn-error.log*
 package-lock.json
 /tasks
 postman_collection.json
+
+scratch

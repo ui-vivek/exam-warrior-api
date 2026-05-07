@@ -2,6 +2,7 @@ import healthRouter from '@/router/healthRouter';
 import userRouter from '@/router/userRouter';
 import authRouter from '@/router/authRouter';
 import aiRouter from '@/router/aiRouter';
+import questionRouter from '@/router/questionRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -11,5 +12,6 @@ router.use('/health', healthRouter);
 router.use('/users', userRouter);
 router.use('/auth', authRouter);
 router.use('/ai', aiRouter);
+router.use('/questions', questionRouter);
 
 export default router;

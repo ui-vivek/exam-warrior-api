@@ -185,6 +185,39 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "POST /:id/report",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/:id/report",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            ":id",
+            "report"
+          ]
+        }
+      },
+      "response": []
     }
   ],
   "variable": [
