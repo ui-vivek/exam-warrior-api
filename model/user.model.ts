@@ -11,6 +11,7 @@ const UserSchema = new mongoose.Schema({
   razorpaySubId:        { type: String },
   streakCount:          { type: Number, default: 0 },
   lastActiveDate:       { type: Date },
+  refreshToken:         { type: String }, // Store refresh token hash or value
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

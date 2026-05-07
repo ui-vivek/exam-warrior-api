@@ -2,6 +2,7 @@ import path from 'path';
 import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import helmet from 'helmet';
 
 import { env } from '@/lib/config';
 import connectDB from '@/lib/db';
@@ -14,11 +15,23 @@ connectDB();
 const app = express();
 const projectRoot = process.cwd();
 
-// Middleware
-app.use(cors());
-app.use(morgan('dev'));
+// Standard Middleware
+app.use(cors({
+  origin: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan('dev'));
+
+// Security Middleware
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// Removed mongoSanitize temporarily due to incompatibility crash
+
 app.use(express.static(path.join(projectRoot, 'public')));
 
 // Views setup

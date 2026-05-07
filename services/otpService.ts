@@ -10,7 +10,7 @@ export class OtpService {
   static async sendOtp(phone: string): Promise<{ success: boolean; message: string; code?: string }> {
     const isDummy = this.DUMMY_NUMBERS.includes(phone);
 
-    // 1. Validate phone
+    // 1. Validate phone (Skip for dummy)
     if (!isDummy && !/^[6-9]\d{9}$/.test(phone)) {
       return { success: false, message: 'Please enter a valid 10-digit phone number', code: 'INVALID_PHONE' };
     }
@@ -30,20 +30,23 @@ export class OtpService {
       };
     }
 
-    // 3. Rate limit: max 3 OTPs per phone per 5 minutes
-    const recentOtps = await OtpStore.countDocuments({
-      phone,
-      createdAt: { $gte: new Date(Date.now() - 300000) } 
-    });
-    
-    if (recentOtps >= 3) {
-      return { 
-        success: false, 
-        message: 'You have requested too many OTPs. Please wait 5 minutes before trying again.', 
-        code: 'RATE_LIMIT' 
-      };
+    // 3. Rate limit (Skip for dummy)
+    if (!isDummy) {
+      const recentOtps = await OtpStore.countDocuments({
+        phone,
+        createdAt: { $gte: new Date(Date.now() - 300000) } 
+      });
+      
+      if (recentOtps >= 3) {
+        return { 
+          success: false, 
+          message: 'You have requested too many OTPs. Please wait 5 minutes before trying again.', 
+          code: 'RATE_LIMIT' 
+        };
+      }
     }
 
+    // 4. Handle Dummy Login
     if (isDummy) {
       const otpHash = await bcrypt.hash(this.DUMMY_OTP, 10);
       await OtpStore.deleteMany({ phone }); 
@@ -57,7 +60,7 @@ export class OtpService {
       return { success: true, message: 'OTP sent successfully' };
     }
 
-    // 4. Tracking in Database
+    // 5. Tracking in Database for real numbers
     await OtpStore.create({
       phone,
       otpHash: 'MANAGED_BY_TWILIO',
@@ -65,7 +68,7 @@ export class OtpService {
       expiresAt: new Date(Date.now() + 600000),
     });
 
-    // 5. Send via Twilio Verify
+    // 6. Send via Twilio Verify
     const sent = await this.sendViaTwilioVerify(phone);
 
     if (!sent) {
@@ -79,7 +82,7 @@ export class OtpService {
     try {
       const { accountSid, authToken, verifySid } = env.twilio;
       if (!accountSid || !authToken || !verifySid || accountSid.includes('your_')) {
-        console.error('Twilio credentials or Verify SID missing or invalid');
+        console.error('Twilio credentials missing or invalid');
         return false;
       }
 
@@ -108,6 +111,7 @@ export class OtpService {
       throw error;
     }
 
+    // 1. Handle Dummy Verification
     if (this.DUMMY_NUMBERS.includes(phone)) {
       if (otp === this.DUMMY_OTP) {
         await OtpStore.deleteMany({ phone });
@@ -138,7 +142,7 @@ export class OtpService {
           if (updatedRecord && updatedRecord.attempts >= 5) {
             await OtpStore.updateOne(
               { _id: updatedRecord._id },
-              { $set: { lockedUntil: new Date(Date.now() + 1800000) } } // 30 minutes
+              { $set: { lockedUntil: new Date(Date.now() + 1800000) } } 
             );
             const error: any = new Error('Too many failed attempts. Account locked for 30 minutes.');
             error.code = 'ACCOUNT_LOCKED';
