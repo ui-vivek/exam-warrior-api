@@ -15,14 +15,15 @@ ${weakTopics.join(', ')}
 Difficulty: ${difficulty}
 
 RULES:
-- Output ONLY valid JSON
-- No markdown (no \`\`\`json blocks), just the raw JSON object
-- No explanation outside JSON
+- Output ONLY valid JSON — no extra text, no markdown, no backticks
+- Do NOT wrap the response in \`\`\`json ... \`\`\` blocks
+- Start directly with { and end with }
+- No explanation or text outside the JSON object
 - Each question must have exactly 4 options (a, b, c, d)
 - correctOption must be the actual correct answer (one of: "a", "b", "c", "d")
-- explanationHindi must be in simple conversational Hinglish
+- explanationHindi must be in simple conversational Hinglish (Keep it concise, max 2-3 lines)
 - Style: "Yahan trick yeh hai ki...", "Dhyan rakhna...", "Isko yaad rakhne ka aasan tarika..."
-- Avoid formal Sanskrit-heavy Hindi
+- Avoid formal Sanskrit-heavy Hindi and unnecessary filler text
 - Do not repeat topics: ${recentTopics.join(', ')}
 
 OUTPUT FORMAT:

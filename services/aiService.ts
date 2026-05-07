@@ -23,7 +23,7 @@ export const generateQuestions = async (
       
       const response = await anthropic.messages.create({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
+        max_tokens: 8000,
         temperature: 0.4,
         messages: [{ role: 'user', content: prompt }],
       });
@@ -31,7 +31,12 @@ export const generateQuestions = async (
       const content = response.content[0];
       if (content.type !== 'text') throw new Error('AI response is not text');
 
-      const raw = content.text;
+      let raw = content.text;
+      
+      // Clean markdown code blocks if present
+      if (raw.includes('```')) {
+        raw = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+      }
       
       // Attempt to parse and validate
       const parsedData = JSON.parse(raw);
