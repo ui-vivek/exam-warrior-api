@@ -51,7 +51,9 @@ app.get('/', (req: Request, res: Response) => {
 app.use('/api/v1', apiRouter);
 
 // Auto-generate Postman Collection on startup
-syncPostman(app);
+setTimeout(() => {
+  syncPostman(app);
+}, 1000);
 
 // Error Handling
 app.use(notFoundHandler);
