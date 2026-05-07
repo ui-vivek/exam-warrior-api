@@ -8,12 +8,18 @@ import { env } from '@/lib/config';
 import connectDB from '@/lib/db';
 import apiRouter from '@/router';
 import { errorHandler, notFoundHandler } from '@/middleware/errorMiddleware';
+import { syncPostman } from '@/utils/postmanSync';
 
 // Connect to Database
 connectDB();
 
 const app = express();
 const projectRoot = process.cwd();
+
+// Health check endpoint for Render uptime (Must be first)
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Standard Middleware
 app.use(cors({
@@ -43,6 +49,9 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.use('/api/v1', apiRouter);
+
+// Auto-generate Postman Collection on startup
+syncPostman(app);
 
 // Error Handling
 app.use(notFoundHandler);

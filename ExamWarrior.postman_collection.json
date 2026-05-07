@@ -1,0 +1,20 @@
+{
+  "info": {
+    "name": "Exam Warrior Auto-Sync",
+    "description": "Automatically generated collection from Express routes",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5050",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
