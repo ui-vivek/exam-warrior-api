@@ -23,7 +23,11 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Standard Middleware
 app.use(cors({
-  origin: ['http://localhost:4200', 'http://127.0.0.1:4200'],
+  origin: [
+    'http://localhost:4200', 
+    'http://127.0.0.1:4200',
+    'https://exam-warrior.netlify.app'
+  ],
   credentials: true
 }));
 app.use(express.json());
