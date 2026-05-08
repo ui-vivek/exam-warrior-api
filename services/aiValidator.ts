@@ -14,7 +14,7 @@ const QuestionSchema = z.object({
 });
 
 const AIResponseSchema = z.object({
-  questions: z.array(QuestionSchema).length(20),
+  questions: z.array(QuestionSchema).min(1),
 });
 
 export const validateAIQuestions = (data: any) => {
