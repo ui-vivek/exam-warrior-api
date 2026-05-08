@@ -4,6 +4,7 @@ import authRouter from '@/router/authRouter';
 import aiRouter from '@/router/aiRouter';
 import questionRouter from '@/router/questionRouter';
 import testRouter from '@/router/testRouter';
+import paymentRouter from '@/router/paymentRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -15,5 +16,6 @@ router.use('/auth', authRouter);
 router.use('/ai', aiRouter);
 router.use('/questions', questionRouter);
 router.use('/tests', testRouter);
+router.use('/payments', paymentRouter);
 
 export default router;

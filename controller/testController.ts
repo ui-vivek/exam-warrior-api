@@ -15,6 +15,12 @@ export const getTodayTest = async (req: Request, res: Response) => {
     let test = await Test.findOne({ userId, testDate: today })
       .populate('questions', '-correctOption -explanationHindi');
 
+    // If test exists but questions couldn't be populated (e.g. deleted from DB), re-generate
+    if (test && (!test.questions || test.questions.length === 0)) {
+      await Test.deleteOne({ _id: test._id });
+      test = null;
+    }
+
     if (!test) {
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'User not found' });
@@ -125,5 +131,54 @@ export const submitTest = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     res.status(500).json({ message: 'Error submitting test', error: error.message });
+  }
+};
+
+export const getTestReview = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const { id } = req.params;
+
+    const test = await Test.findOne({ _id: id, userId });
+    if (!test) return res.status(404).json({ error: true, message: 'Test not found' });
+
+    const answers = await TestAnswer.find({ testId: test._id });
+    const questions = await Question.find({ _id: { $in: test.questions } });
+
+    // Merge questions with user answers
+    const answerMap: any = {};
+    answers.forEach(a => { answerMap[a.questionId.toString()] = a; });
+
+    const result = questions.map(q => ({
+      questionId: q._id,
+      questionText: q.questionText,
+      optionA: q.optionA, 
+      optionB: q.optionB, 
+      optionC: q.optionC, 
+      optionD: q.optionD,
+      correctOption: q.correctOption,
+      explanationHindi: q.explanationHindi,
+      subject: q.subject, 
+      topic: q.topic,
+      selectedOption: answerMap[q._id.toString()]?.selectedOption,
+      isCorrect: answerMap[q._id.toString()]?.isCorrect,
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error fetching test review', error: error.message });
+  }
+};
+
+export const getTestHistory = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).userId;
+    const tests = await Test.find({ userId, completed: true })
+      .sort({ createdAt: -1 })
+      .select('testDate score totalQuestions timeTakenSec createdAt');
+
+    res.json({ success: true, data: tests });
+  } catch (error: any) {
+    res.status(500).json({ message: 'Error fetching test history', error: error.message });
   }
 };

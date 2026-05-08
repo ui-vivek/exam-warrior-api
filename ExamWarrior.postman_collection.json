@@ -1,290 +1,410 @@
 {
   "info": {
-    "name": "Exam Warrior Auto-Sync",
-    "description": "Automatically generated collection from Express routes",
+    "name": "Exam Warrior API",
+    "description": "Comprehensive API collection for Exam Warrior Backend (Auto-Synced)",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "GET /",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": []
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "PUT /exam-type",
-      "request": {
-        "method": "PUT",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": ":id",
+      "item": [
+        {
+          "name": "POST /:id/report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"reason\": \"Question is wrong\",\n    \"details\": \"The correct answer should be B.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:id/report",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":id",
+                "report"
+              ]
             }
-          }
+          },
+          "response": []
         },
-        "url": {
-          "raw": "{{base_url}}/exam-type",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "exam-type"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "POST /send-otp",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+        {
+          "name": "POST /:id/submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"answers\": [\n        {\n            \"questionId\": \"65f123456789abcdef012345\",\n            \"selectedOption\": \"a\",\n            \"timeSpentSec\": 15\n        },\n        {\n            \"questionId\": \"65f123456789abcdef012346\",\n            \"selectedOption\": \"c\",\n            \"timeSpentSec\": 10\n        }\n    ],\n    \"timeTakenSec\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:id/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":id",
+                "submit"
+              ]
             }
-          }
+          },
+          "response": []
         },
-        "url": {
-          "raw": "{{base_url}}/send-otp",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "send-otp"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "POST /verify-otp",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+        {
+          "name": "GET /:id/review",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/:id/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":id",
+                "review"
+              ]
             }
-          }
-        },
-        "url": {
-          "raw": "{{base_url}}/verify-otp",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "verify-otp"
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
+      ]
     },
     {
-      "name": "POST /refresh-token",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "Exam-type",
+      "item": [
+        {
+          "name": "PUT /exam-type",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"examType\": \"SSC\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/exam-type",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "exam-type"
+              ]
             }
-          }
-        },
-        "url": {
-          "raw": "{{base_url}}/refresh-token",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "refresh-token"
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
+      ]
     },
     {
-      "name": "POST /generate-questions",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "General",
+      "item": [
+        {
+          "name": "GET /",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": []
             }
-          }
-        },
-        "url": {
-          "raw": "{{base_url}}/generate-questions",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "generate-questions"
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
+      ]
     },
     {
-      "name": "POST /:id/report",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "Generate-questions",
+      "item": [
+        {
+          "name": "POST /generate-questions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"count\": 20,\n    \"examType\": \"SSC\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/generate-questions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "generate-questions"
+              ]
             }
-          }
-        },
-        "url": {
-          "raw": "{{base_url}}/:id/report",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            ":id",
-            "report"
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
+      ]
     },
     {
-      "name": "GET /today",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "url": {
-          "raw": "{{base_url}}/today",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "today"
-          ]
-        }
-      },
-      "response": []
-    },
-    {
-      "name": "POST /:id/submit",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{access_token}}",
-            "type": "text"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n    \n}",
-          "options": {
-            "raw": {
-              "language": "json"
+      "name": "History",
+      "item": [
+        {
+          "name": "GET /history",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/history",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "history"
+              ]
             }
-          }
-        },
-        "url": {
-          "raw": "{{base_url}}/:id/submit",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            ":id",
-            "submit"
-          ]
+          },
+          "response": []
         }
-      },
-      "response": []
+      ]
+    },
+    {
+      "name": "Refresh-token",
+      "item": [
+        {
+          "name": "POST /refresh-token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"refreshToken\": \"your_refresh_token_here\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/refresh-token",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "refresh-token"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Send-otp",
+      "item": [
+        {
+          "name": "POST /send-otp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone\": \"+919999999999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/send-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "send-otp"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Status",
+      "item": [
+        {
+          "name": "GET /status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "status"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Today",
+      "item": [
+        {
+          "name": "GET /today",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/today",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "today"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Verify-otp",
+      "item": [
+        {
+          "name": "POST /verify-otp",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone\": \"+919999999999\",\n    \"otp\": \"123456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/verify-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "verify-otp"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
     }
   ],
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:5050",
+      "value": "http://localhost:5050/api/v1",
       "type": "string"
     },
     {
       "key": "access_token",
-      "value": "",
+      "value": "your_jwt_token_here",
       "type": "string"
     }
   ]
