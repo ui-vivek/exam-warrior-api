@@ -218,6 +218,62 @@
         }
       },
       "response": []
+    },
+    {
+      "name": "GET /today",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/today",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "today"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "POST /:id/submit",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}",
+            "type": "text"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/:id/submit",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            ":id",
+            "submit"
+          ]
+        }
+      },
+      "response": []
     }
   ],
   "variable": [
