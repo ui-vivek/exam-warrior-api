@@ -2,9 +2,15 @@ import Anthropic from '@anthropic-ai/sdk';
 import { buildQuestionPrompt } from '@/utils/aiPromptBuilder';
 import { validateAIQuestions } from '@/services/aiValidator';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+let _anthropic: Anthropic | null = null;
+const getAnthropic = () => {
+  if (!_anthropic) {
+    _anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return _anthropic;
+};
 
 export const generateQuestions = async (
   examType: string,
@@ -24,7 +30,7 @@ export const generateQuestions = async (
     try {
       console.log(`AI Generation Attempt ${attempts + 1}/${maxAttempts}...`);
       
-      const response = await anthropic.messages.create({
+      const response = await getAnthropic().messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 8000,
         temperature: 0.4,
@@ -87,7 +93,7 @@ export const verifyBatchQuestions = async (questions: any[]): Promise<any[]> => 
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
   try {
-    const response = await anthropic.messages.create({
+    const response = await getAnthropic().messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1000,
       messages: [{ role: 'user', content: prompt }],
@@ -132,7 +138,7 @@ export const regenerateSingleQuestion = async (topic: string, examType: string):
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1000,
     messages: [{ role: 'user', content: prompt }],
