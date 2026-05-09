@@ -4,30 +4,79 @@ import { getTodayIST } from '@/utils/dateHelper';
 
 /**
  * Updates topic-wise proficiency for a user after a test
+ * Uses bulkWrite for high performance
  */
 export const updateTopicStats = async (userId: string, answerDocs: any[], questionMap: any) => {
+  if (!answerDocs || answerDocs.length === 0) return;
+
+  // Group by topic to avoid multiple increments for same topic in one bulkWrite (though MongoDB handles it, grouping is cleaner)
+  const topicGroups: any = {};
+
   for (const answer of answerDocs) {
     const q = questionMap[answer.questionId];
     if (!q) continue;
 
-    await UserTopicStat.findOneAndUpdate(
-      { userId, subject: q.subject, topic: q.topic },
-      {
+    const key = `${q.subject}|${q.topic}`;
+    if (!topicGroups[key]) {
+      topicGroups[key] = {
+        subject: q.subject,
+        topic: q.topic,
+        attempted: 0,
+        correct: 0
+      };
+    }
+
+    topicGroups[key].attempted += 1;
+    if (answer.isCorrect) {
+      topicGroups[key].correct += 1;
+    }
+  }
+
+  const ops = Object.values(topicGroups).map((group: any) => ({
+    updateOne: {
+      filter: { userId, subject: group.subject, topic: group.topic },
+      update: {
         $inc: {
-          totalAttempted: 1,
-          totalCorrect: answer.isCorrect ? 1 : 0
+          totalAttempted: group.attempted,
+          totalCorrect: group.correct
         },
         $set: { lastAttemptedAt: new Date() }
       },
-      { upsert: true, new: true }
-    ).then(stat => {
-        if (stat) {
-            const accuracy = (stat.totalCorrect / stat.totalAttempted) * 100;
-            stat.accuracyPct = Math.round(accuracy);
-            return stat.save();
+      upsert: true
+    }
+  }));
+
+  if (ops.length === 0) return;
+
+  // Execute bulk increment
+  await UserTopicStat.bulkWrite(ops);
+
+  // Recalculate accuracy for the affected topics of this user
+  // We use an aggregation pipeline in updateMany to do this efficiently
+  const subjects = Object.values(topicGroups).map((g: any) => g.subject);
+  const topics = Object.values(topicGroups).map((g: any) => g.topic);
+
+  await UserTopicStat.updateMany(
+    { userId, subject: { $in: subjects }, topic: { $in: topics } },
+    [
+      {
+        $set: {
+          accuracyPct: {
+            $round: [
+              {
+                $cond: [
+                  { $gt: ["$totalAttempted", 0] },
+                  { $multiply: [{ $divide: ["$totalCorrect", "$totalAttempted"] }, 100] },
+                  0
+                ]
+              },
+              1 // Round to 1 decimal place
+            ]
+          }
         }
-    });
-  }
+      }
+    ]
+  );
 };
 
 /**
