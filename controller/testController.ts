@@ -1,14 +1,17 @@
 import { Request, Response } from 'express';
+import { AuthRequest } from '@/middleware/authMiddleware';
 import { Test } from '@/model/test.model';
 import { Question } from '@/model/question.model';
+import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { TestAnswer } from '@/model/testAnswer.model';
 import { getTodayIST, getTodayStart } from '@/utils/dateHelper';
 import { updateTopicStats, updateStreak } from '@/services/analyticsService';
 
-export const getTodayTest = async (req: Request, res: Response) => {
+export const getTodayTest = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: true, message: 'Unauthorized' });
     const today = getTodayIST();
 
     // Check if test already exists for today
@@ -25,17 +28,59 @@ export const getTodayTest = async (req: Request, res: Response) => {
       const user = await User.findById(userId);
       if (!user) return res.status(404).json({ message: 'User not found' });
 
-      // Pick 20 questions from today's pool for this user's exam type
-      const questions = await Question.aggregate([
-        { 
-          $match: { 
-            examType: user.examType, 
-            isActive: true, 
-            generationDate: { $gte: getTodayStart() } 
-          } 
-        },
-        { $sample: { size: 20 } }
-      ]);
+      // --- Adaptive Learning Logic ---
+      // Fetch user's top 3 weak topics (accuracy < 50%, attempted >= 5)
+      const weakTopicsData = await UserTopicStat.find({
+        userId,
+        totalAttempted: { $gte: 5 },
+        accuracyPct: { $lt: 50 }
+      })
+      .sort({ accuracyPct: 1 })
+      .limit(3)
+      .select('topic');
+      
+      const weakTopicNames = weakTopicsData.map(t => t.topic);
+      let questions: any[] = [];
+
+      if (weakTopicNames.length > 0) {
+        // 1. Prioritize questions from weak topics (max 10)
+        questions = await Question.aggregate([
+          { $match: { examType: user.examType, isActive: true, topic: { $in: weakTopicNames } } },
+          { $sample: { size: 10 } }
+        ]);
+      }
+
+      // 2. Fill remaining (or all if no weak topics) from today's pool
+      const remainingSize = 20 - questions.length;
+      if (remainingSize > 0) {
+        const todayPool = await Question.aggregate([
+          { 
+            $match: { 
+              examType: user.examType, 
+              isActive: true, 
+              _id: { $nin: questions.map(q => q._id) },
+              generationDate: { $gte: getTodayStart() } 
+            } 
+          },
+          { $sample: { size: remainingSize } }
+        ]);
+        questions.push(...todayPool);
+      }
+
+      // 3. Last fallback: if still not 20, pick from any active questions
+      if (questions.length < 20) {
+        const finalFallback = await Question.aggregate([
+          { 
+            $match: { 
+              examType: user.examType, 
+              isActive: true, 
+              _id: { $nin: questions.map(q => q._id) } 
+            } 
+          },
+          { $sample: { size: 20 - questions.length } }
+        ]);
+        questions.push(...finalFallback);
+      }
 
       // If not enough questions from today, fallback to any active questions of that examType
       if (questions.length < 20) {
@@ -70,11 +115,13 @@ export const getTodayTest = async (req: Request, res: Response) => {
   }
 };
 
-export const submitTest = async (req: Request, res: Response) => {
+export const submitTest = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: true, message: 'Unauthorized' });
+
     const { id } = req.params;
-    const { answers, timeTakenSec } = req.body;
+    const { answers = [], timeTakenSec = 0 } = req.body;
 
     const test = await Test.findOne({ _id: id, userId });
     if (!test) return res.status(404).json({ error: true, message: 'Test nahi mila' });
@@ -91,27 +138,42 @@ export const submitTest = async (req: Request, res: Response) => {
     );
 
     let score = 0;
+    const totalQuestionsCount = test.totalQuestions || questions.length || 20;
+
+    console.log(`[Test Submission] User: ${userId}, Test: ${test._id}, Answers Received: ${uniqueAnswers.length}`);
+
     const answerDocs = uniqueAnswers.map((a: any) => {
-      const q = questionMap[a.questionId];
-      const isCorrect = q && a.selectedOption === q.correctOption;
+      const q = questionMap[String(a.questionId)];
+      if (!q) return null;
+      
+      const userAns = String(a.selectedOption || '').trim().toLowerCase();
+      const correctAns = String(q.correctOption || '').trim().toLowerCase();
+      
+      const isCorrect = userAns === correctAns;
       if (isCorrect) score++;
+
       return { 
         testId: test._id, 
         questionId: a.questionId, 
         selectedOption: a.selectedOption, 
-        isCorrect, 
-        timeSpentSec: a.timeSpentSec 
+        isCorrect: !!isCorrect, 
+        timeSpentSec: Number(a.timeSpentSec) || 0
       };
-    });
+    }).filter(Boolean);
+
+    console.log(`[Test Submission] Final Score Calculated: ${score} / ${totalQuestionsCount}`);
 
     // Save answers
-    await TestAnswer.insertMany(answerDocs);
+    if (answerDocs.length > 0) {
+      await TestAnswer.insertMany(answerDocs);
+    }
 
     // Update test
     await Test.findByIdAndUpdate(test._id, {
       score, 
-      timeTakenSec, 
-      completed: true
+      timeTakenSec: Number(timeTakenSec) || 0, 
+      completed: true,
+      updatedAt: new Date()
     });
 
     // Update topic stats
@@ -124,19 +186,21 @@ export const submitTest = async (req: Request, res: Response) => {
       success: true, 
       data: { 
         score, 
-        total: test.totalQuestions, 
-        accuracyPct: ((score / test.totalQuestions) * 100).toFixed(1), 
+        total: totalQuestionsCount, 
+        accuracyPct: ((score / totalQuestionsCount) * 100).toFixed(1), 
         timeTakenSec 
       } 
     });
   } catch (error: any) {
+    console.error(`[Test Submit Error]`, error);
     res.status(500).json({ message: 'Error submitting test', error: error.message });
   }
 };
 
-export const getTestReview = async (req: Request, res: Response) => {
+export const getTestReview = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: true, message: 'Unauthorized' });
     const { id } = req.params;
 
     const test = await Test.findOne({ _id: id, userId });
@@ -170,12 +234,17 @@ export const getTestReview = async (req: Request, res: Response) => {
   }
 };
 
-export const getTestHistory = async (req: Request, res: Response) => {
+export const getTestHistory = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req as any).userId;
+    const userId = req.userId;
+    if (!userId) return res.status(401).json({ error: true, message: 'Unauthorized' });
+    
+    const limit = parseInt(req.query.limit as string) || 30;
+
     const tests = await Test.find({ userId, completed: true })
       .sort({ createdAt: -1 })
-      .select('testDate score totalQuestions timeTakenSec createdAt');
+      .limit(limit)
+      .select('testDate score timeTakenSec createdAt');
 
     res.json({ success: true, data: tests });
   } catch (error: any) {

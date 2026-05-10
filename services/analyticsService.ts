@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { getTodayIST } from '@/utils/dateHelper';
@@ -49,15 +50,21 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
   if (ops.length === 0) return;
 
   // Execute bulk increment
-  await UserTopicStat.bulkWrite(ops);
+  const userObjectId = new mongoose.Types.ObjectId(userId);
+  
+  await UserTopicStat.bulkWrite(ops.map(op => ({
+    updateOne: {
+      ...op.updateOne,
+      filter: { ...op.updateOne.filter, userId: userObjectId }
+    }
+  })));
 
   // Recalculate accuracy for the affected topics of this user
-  // We use an aggregation pipeline in updateMany to do this efficiently
   const subjects = Object.values(topicGroups).map((g: any) => g.subject);
   const topics = Object.values(topicGroups).map((g: any) => g.topic);
 
   await UserTopicStat.updateMany(
-    { userId, subject: { $in: subjects }, topic: { $in: topics } },
+    { userId: userObjectId, subject: { $in: subjects }, topic: { $in: topics } },
     [
       {
         $set: {
@@ -84,30 +91,34 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
  */
 export const updateStreak = async (userId: string) => {
   const today = new Date();
-  today.setUTCHours(0,0,0,0);
+  today.setHours(0, 0, 0, 0);
   
   const user = await User.findById(userId);
   if (!user) return;
 
-  const lastActive = user.lastActiveDate ? new Date(user.lastActiveDate) : null;
-  if (lastActive) {
-    lastActive.setUTCHours(0,0,0,0);
+  const lastActiveDate = user.lastActiveDate ? new Date(user.lastActiveDate) : null;
+  
+  if (lastActiveDate) {
+    const lastActive = new Date(lastActiveDate);
+    lastActive.setHours(0, 0, 0, 0);
     
-    const diffDays = Math.floor((today.getTime() - lastActive.getTime()) / (1000 * 60 * 60 * 24));
+    const diffMs = today.getTime() - lastActive.getTime();
+    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
     
     if (diffDays === 1) {
-      // Streak continues
+      // Exactly 1 day since last activity -> increment streak
       user.streakCount += 1;
     } else if (diffDays > 1) {
-      // Streak broken
+      // More than 1 day missed -> reset to 1
       user.streakCount = 1;
     }
-    // If diffDays === 0, streak already counted for today
+    // If diffDays === 0, streak is already counted for today
   } else {
-    // First time
+    // First activity ever
     user.streakCount = 1;
   }
 
   user.lastActiveDate = new Date();
   await user.save();
+  console.log(`[Streak] User: ${userId}, New Streak: ${user.streakCount}, Last Active: ${lastActiveDate}`);
 };

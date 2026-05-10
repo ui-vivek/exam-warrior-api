@@ -303,6 +303,34 @@
       ]
     },
     {
+      "name": "Stats",
+      "item": [
+        {
+          "name": "GET /stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/stats",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "stats"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Status",
       "item": [
         {
@@ -323,6 +351,34 @@
               ],
               "path": [
                 "status"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Subject-stats",
+      "item": [
+        {
+          "name": "GET /subject-stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/subject-stats",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subject-stats"
               ]
             }
           },
@@ -388,6 +444,34 @@
               ],
               "path": [
                 "verify-otp"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Weak-topics",
+      "item": [
+        {
+          "name": "GET /weak-topics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/weak-topics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "weak-topics"
               ]
             }
           },

@@ -24,6 +24,8 @@ RULES:
 - explanationHindi must be in simple conversational Hinglish (Keep it concise, max 2-3 lines)
 - Style: "Yahan trick yeh hai ki...", "Dhyan rakhna...", "Isko yaad rakhne ka aasan tarika..."
 - Avoid formal Sanskrit-heavy Hindi and unnecessary filler text
+- Do NOT use generic topics like "General Knowledge" for subjects like Mathematics, Reasoning, or English.
+- Use specific sub-topics (e.g., "Algebra", "Syllogism", "Tenses") for non-GK subjects.
 - Do not repeat topics: ${recentTopics.join(', ')}
 
 OUTPUT FORMAT:
