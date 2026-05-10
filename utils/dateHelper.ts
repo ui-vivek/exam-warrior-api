@@ -19,3 +19,14 @@ export const getTodayStart = (): Date => {
   // Convert back to UTC for MongoDB queries
   return new Date(istDate.getTime() - istOffset);
 };
+
+/**
+ * Returns yesterday's date in 'YYYY-MM-DD' format in IST
+ */
+export const getYesterdayIST = (): string => {
+  const date = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istDate = new Date(date.getTime() + istOffset);
+  istDate.setUTCDate(istDate.getUTCDate() - 1);
+  return istDate.toISOString().split('T')[0];
+};

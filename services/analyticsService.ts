@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
-import { getTodayIST } from '@/utils/dateHelper';
+import { getTodayIST, getYesterdayIST } from '@/utils/dateHelper';
 
 /**
  * Updates topic-wise proficiency for a user after a test
@@ -87,38 +87,49 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
 };
 
 /**
- * Updates user's daily streak
+ * Updates user's daily streak using IST timezone.
+ * 
+ * Rules:
+ * - First ever test → streak = 1
+ * - Same day (IST) → no change (no double increment)
+ * - Consecutive day (yesterday IST) → streak + 1
+ * - Gap of 2+ days → reset to 1
  */
 export const updateStreak = async (userId: string) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  
   const user = await User.findById(userId);
   if (!user) return;
 
-  const lastActiveDate = user.lastActiveDate ? new Date(user.lastActiveDate) : null;
-  
-  if (lastActiveDate) {
-    const lastActive = new Date(lastActiveDate);
-    lastActive.setHours(0, 0, 0, 0);
-    
-    const diffMs = today.getTime() - lastActive.getTime();
-    const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 1) {
-      // Exactly 1 day since last activity -> increment streak
-      user.streakCount += 1;
-    } else if (diffDays > 1) {
-      // More than 1 day missed -> reset to 1
-      user.streakCount = 1;
-    }
-    // If diffDays === 0, streak is already counted for today
+  const todayIST = getTodayIST();       // 'YYYY-MM-DD' in IST
+  const yesterdayIST = getYesterdayIST(); // 'YYYY-MM-DD' in IST
+
+  let newStreak: number;
+
+  if (!user.lastActiveDate) {
+    // First ever test
+    newStreak = 1;
   } else {
-    // First activity ever
-    user.streakCount = 1;
+    // Convert stored lastActiveDate to IST date string for comparison
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const lastActiveIST = new Date(new Date(user.lastActiveDate).getTime() + istOffset)
+      .toISOString().split('T')[0];
+
+    if (lastActiveIST === todayIST) {
+      // Already counted today — no change
+      console.log(`[Streak] Already counted today for user ${userId}. Streak: ${user.streakCount}`);
+      return;
+    } else if (lastActiveIST === yesterdayIST) {
+      // Consecutive day — increment
+      newStreak = user.streakCount + 1;
+    } else {
+      // Gap — reset streak
+      newStreak = 1;
+    }
   }
 
-  user.lastActiveDate = new Date();
-  await user.save();
-  console.log(`[Streak] User: ${userId}, New Streak: ${user.streakCount}, Last Active: ${lastActiveDate}`);
+  await User.findByIdAndUpdate(userId, {
+    streakCount: newStreak,
+    lastActiveDate: new Date()
+  });
+
+  console.log(`[Streak] User: ${userId}, New Streak: ${newStreak}, Today IST: ${todayIST}`);
 };
