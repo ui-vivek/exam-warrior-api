@@ -4,12 +4,14 @@ import { getUsers, updateUserExamType } from '@/services/userService';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
+import { getMessage } from '@/utils/messages';
+import { LangRequest } from '@/middleware/languageMiddleware';
 
 import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 
-export const listUsers = asyncHandler(async (req: Request, res: Response) => {
+export const listUsers = asyncHandler(async (req: LangRequest, res: Response) => {
   const users = await getUsers();
   res.status(200).json({
     success: true,
@@ -18,27 +20,27 @@ export const listUsers = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-export const updateExamType = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const updateExamType = asyncHandler(async (req: LangRequest, res: Response) => {
   const { examType } = req.body;
   const validTypes = ['SSC', 'RAILWAY', 'BANKING', 'UPSC'];
   
   if (!validTypes.includes(examType)) {
-    throw new AppError('Invalid exam type', 400);
+    throw new AppError('invalid_exam_type', 400);
   }
 
   const user = await updateUserExamType(req.userId!, examType);
   
   res.status(200).json({ 
     success: true, 
-    message: 'Exam type updated successfully',
+    message: getMessage('exam_type_updated', req.lang),
     data: user 
   });
 });
 
-export const getUserStats = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getUserStats = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
   const user = await User.findById(userId);
-  if (!user) throw new AppError('User not found', 404);
+  if (!user) throw new AppError('user_not_found', 404);
 
   const tests = await Test.find({ userId, completed: true });
   
@@ -65,9 +67,9 @@ export const getUserStats = asyncHandler(async (req: AuthRequest, res: Response)
   });
 });
 
-export const getWeakTopics = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getWeakTopics = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
   
   const topics = await UserTopicStat.find({
     userId: new mongoose.Types.ObjectId(userId),
@@ -82,7 +84,7 @@ export const getWeakTopics = asyncHandler(async (req: AuthRequest, res: Response
   });
 });
 
-export const getSubjectStats = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getSubjectStats = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
   
   const stats = await UserTopicStat.aggregate([

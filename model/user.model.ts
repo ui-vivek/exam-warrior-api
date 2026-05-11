@@ -12,7 +12,8 @@ const UserSchema = new mongoose.Schema({
   subscriptionId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
   streakCount:          { type: Number, default: 0 },
   lastActiveDate:       { type: Date },
-  refreshToken:         { type: String }, // Store refresh token hash or value
+  refreshToken:         { type: String },
+  preferredLanguage:    { type: String, enum: ['en', 'hi'], default: 'hi' }
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

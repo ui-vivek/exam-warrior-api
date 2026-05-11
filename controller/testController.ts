@@ -9,10 +9,12 @@ import { getTodayIST, getTodayStart } from '@/utils/dateHelper';
 import { updateTopicStats, updateStreak } from '@/services/analyticsService';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
+import { getMessage } from '@/utils/messages';
+import { LangRequest } from '@/middleware/languageMiddleware';
 
-export const getTodayTest = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
   const today = getTodayIST();
 
   // Check if test already exists for today
@@ -27,7 +29,7 @@ export const getTodayTest = asyncHandler(async (req: AuthRequest, res: Response)
 
   if (!test) {
     const user = await User.findById(userId);
-    if (!user) throw new AppError('User not found', 404);
+    if (!user) throw new AppError('user_not_found', 404);
 
     // --- Adaptive Learning Logic ---
     // Fetch user's top 3 weak topics (accuracy < 50%, attempted >= 5)
@@ -91,7 +93,7 @@ export const getTodayTest = asyncHandler(async (req: AuthRequest, res: Response)
       ]);
       
       if (fallbackQuestions.length === 0) {
-        throw new AppError('No questions found for this exam type', 404);
+        throw new AppError('no_questions_found', 404);
       }
       
       test = await Test.create({
@@ -107,22 +109,37 @@ export const getTodayTest = asyncHandler(async (req: AuthRequest, res: Response)
       });
     }
 
-    test = await test.populate('questions', '-correctOption -explanationHindi');
+    test = await test.populate('questions', '-correctOption -explanation');
   }
 
-  res.json({ success: true, data: test });
+  const lang = req.lang || 'en';
+  const testObj = test.toObject();
+  
+  if (testObj.questions) {
+    testObj.questions = testObj.questions.map((q: any) => ({
+      ...q,
+      questionText: q.questionText?.[lang] || q.questionText?.en,
+      optionA: q.options?.a?.[lang] || q.options?.a?.en,
+      optionB: q.options?.b?.[lang] || q.options?.b?.en,
+      optionC: q.options?.c?.[lang] || q.options?.c?.en,
+      optionD: q.options?.d?.[lang] || q.options?.d?.en,
+      explanation: q.explanation?.[lang] || q.explanation?.en
+    }));
+  }
+
+  res.json({ success: true, data: testObj });
 });
 
-export const submitTest = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const submitTest = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
 
   const { id } = req.params;
   const { answers = [], timeTakenSec = 0 } = req.body;
 
   const test = await Test.findOne({ _id: id, userId });
-  if (!test) throw new AppError('Test not found', 404);
-  if (test.completed) throw new AppError('Test already submitted', 400);
+  if (!test) throw new AppError('test_not_found', 404);
+  if (test.completed) throw new AppError('test_already_submitted', 400);
 
   // Fetch full questions with correct answers
   const questions = await Question.find({ _id: { $in: test.questions } });
@@ -190,13 +207,13 @@ export const submitTest = asyncHandler(async (req: AuthRequest, res: Response) =
   });
 });
 
-export const getTestReview = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getTestReview = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
   const { id } = req.params;
 
   const test = await Test.findOne({ _id: id, userId });
-  if (!test) throw new AppError('Test not found', 404);
+  if (!test) throw new AppError('test_not_found', 404);
 
   const answers = await TestAnswer.find({ testId: test._id });
   const questions = await Question.find({ _id: { $in: test.questions } });
@@ -205,27 +222,30 @@ export const getTestReview = asyncHandler(async (req: AuthRequest, res: Response
   const answerMap: any = {};
   answers.forEach(a => { answerMap[a.questionId.toString()] = a; });
 
-  const result = questions.map(q => ({
-    questionId: q._id,
-    questionText: q.questionText,
-    optionA: q.optionA, 
-    optionB: q.optionB, 
-    optionC: q.optionC, 
-    optionD: q.optionD,
-    correctOption: q.correctOption,
-    explanationHindi: q.explanationHindi,
-    subject: q.subject, 
-    topic: q.topic,
-    selectedOption: answerMap[q._id.toString()]?.selectedOption,
-    isCorrect: answerMap[q._id.toString()]?.isCorrect,
-  }));
+  const result = questions.map(q => {
+    const lang = req.lang || 'en';
+    return {
+      questionId: q._id,
+      questionText: (q.questionText as any)?.[lang] || (q.questionText as any)?.en,
+      optionA: (q.options as any)?.a?.[lang] || (q.options as any)?.a?.en, 
+      optionB: (q.options as any)?.b?.[lang] || (q.options as any)?.b?.en, 
+      optionC: (q.options as any)?.c?.[lang] || (q.options as any)?.c?.en, 
+      optionD: (q.options as any)?.d?.[lang] || (q.options as any)?.d?.en,
+      correctOption: q.correctOption,
+      explanation: (q.explanation as any)?.[lang] || (q.explanation as any)?.en,
+      subject: q.subject, 
+      topic: q.topic,
+      selectedOption: answerMap[q._id.toString()]?.selectedOption,
+      isCorrect: answerMap[q._id.toString()]?.isCorrect,
+    };
+  });
 
   res.json({ success: true, data: result });
 });
 
-export const getTestHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getTestHistory = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
   
   const limit = parseInt(req.query.limit as string) || 30;
 

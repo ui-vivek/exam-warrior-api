@@ -1,5 +1,7 @@
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
+import { getMessage } from '@/utils/messages';
+import { LangRequest } from '@/middleware/languageMiddleware';
 import mongoose from 'mongoose';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
@@ -12,14 +14,14 @@ import { getRazorpay } from '@/utils/razorpay';
  * POST /payments/create-subscription
  * Creates a Razorpay subscription for the authenticated user.
  */
-export const createSubscription = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const createSubscription = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
 
   // Check if user already has an active subscription to avoid double charging
   const existingUser = await User.findById(userId);
   if (existingUser?.subscriptionStatus === 'active') {
-    throw new AppError('You already have an active subscription.', 400);
+    throw new AppError('already_active_sub', 400);
   }
 
   // Also check for any pending payments in the last 5 minutes to prevent double clicks
@@ -30,13 +32,13 @@ export const createSubscription = asyncHandler(async (req: AuthRequest, res: Res
   });
 
   if (pendingPayment) {
-    throw new AppError('A payment is already being processed. Please wait a few minutes.', 400);
+    throw new AppError('payment_processing', 400);
   }
 
   const { planType } = req.body; // 'monthly' or 'yearly'
 
   if (!planType || !['monthly', 'yearly'].includes(planType)) {
-    throw new AppError('planType must be "monthly" or "yearly"', 400);
+    throw new AppError('invalid_plan_type', 400);
   }
 
   const planId = planType === 'monthly'
@@ -93,9 +95,9 @@ export const createSubscription = asyncHandler(async (req: AuthRequest, res: Res
  * POST /payments/verify
  * Verifies Razorpay payment signature after checkout and activates subscription.
  */
-export const verifyPayment = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const verifyPayment = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
 
   const {
     razorpay_payment_id,
@@ -119,7 +121,7 @@ export const verifyPayment = asyncHandler(async (req: AuthRequest, res: Response
       { razorpaySubscriptionId: razorpay_subscription_id },
       { status: 'failed' }
     );
-    throw new AppError('Payment verification failed', 400);
+    throw new AppError('invalid_signature', 400);
   }
 
   // Fetch subscription details from Razorpay for amount
@@ -168,7 +170,7 @@ export const verifyPayment = asyncHandler(async (req: AuthRequest, res: Response
 
   res.json({
     success: true,
-    message: 'Payment verified and subscription activated',
+    message: getMessage('payment_verified', req.lang),
     data: {
       subscriptionStatus: 'active',
       subscriptionEndDate,
@@ -180,12 +182,12 @@ export const verifyPayment = asyncHandler(async (req: AuthRequest, res: Response
  * GET /payments/status
  * Returns current subscription status for the authenticated user.
  */
-export const getPaymentStatus = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getPaymentStatus = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
 
   const user = await User.findById(userId);
-  if (!user) throw new AppError('User not found', 404);
+  if (!user) throw new AppError('user_not_found', 404);
 
   res.json({
     success: true,
@@ -201,9 +203,9 @@ export const getPaymentStatus = asyncHandler(async (req: AuthRequest, res: Respo
  * GET /payments/history
  * Returns payment history for the authenticated user.
  */
-export const getPaymentHistory = asyncHandler(async (req: AuthRequest, res: Response) => {
+export const getPaymentHistory = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) throw new AppError('Unauthorized', 401);
+  if (!userId) throw new AppError('unauthorized', 401);
 
   const payments = await Payment.find({ userId })
     .sort({ createdAt: -1 })
@@ -232,7 +234,7 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
 
     if (!webhookSecret || !receivedSignature) {
       console.error('[Webhook] Missing webhook secret or signature header');
-      throw new AppError('Missing configuration or signature', 400);
+      throw new AppError('missing_config', 400);
     }
 
     // req.body is a Buffer because of express.raw() in server.ts
@@ -247,7 +249,7 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
     if (expectedSignature !== receivedSignature) {
       console.error('[Webhook] Signature mismatch! Rejecting.');
       await session.abortTransaction();
-      throw new AppError('Invalid signature', 400);
+      throw new AppError('invalid_signature', 400);
     }
 
     // Step 2: Parse event

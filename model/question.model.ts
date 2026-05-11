@@ -1,21 +1,29 @@
 import mongoose from 'mongoose';
 
+const MultilingualString = {
+  en: { type: String, trim: true },
+  hi: { type: String, trim: true }
+};
+
 const QuestionSchema = new mongoose.Schema({
   examType:         { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC'], required: true },
-  subject:          { type: String, required: true },  // Reasoning, Math, GK, English, Hindi
-  topic:            { type: String, required: true },  // e.g. "Number Series"
+  subject:          { type: String, required: true },
+  topic:            { type: String, required: true },
   difficulty:       { type: String, enum: ['easy','medium','hard'], default: 'medium' },
-  questionText:     { type: String, required: true, trim: true },
-  optionA:          { type: String, required: true },
-  optionB:          { type: String, required: true },
-  optionC:          { type: String, required: true },
-  optionD:          { type: String, required: true },
+  
+  // Multilingual content
+  questionText:     MultilingualString,
+  options: {
+    a: MultilingualString,
+    b: MultilingualString,
+    c: MultilingualString,
+    d: MultilingualString
+  },
+  
   correctOption:    { type: String, enum: ['a','b','c','d'], required: true },
-  explanationHindi: { type: String },
-  source:           { type: String, default: 'AI' },   // 'AI' or 'PYQ'
-  aiVerified:       { type: Boolean, default: false },
-  reportedWrong:    { type: Boolean, default: false },
-  reportCount:      { type: Number, default: 0 },
+  explanation:      MultilingualString,
+  
+  source:           { type: String, default: 'AI' },
   isActive:         { type: Boolean, default: true },
   generationDate:   { type: Date, default: Date.now },
   generationVersion:{ type: String, default: 'v1' },

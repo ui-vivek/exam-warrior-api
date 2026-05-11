@@ -8,6 +8,7 @@ import { env } from '@/lib/config';
 import connectDB from '@/lib/db';
 import apiRouter from '@/router';
 import { errorHandler, notFoundHandler } from '@/middleware/errorMiddleware';
+import { languageMiddleware } from '@/middleware/languageMiddleware';
 import { syncPostman } from '@/utils/postmanSync';
 
 // Connect to Database
@@ -36,6 +37,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+app.use(languageMiddleware);
 
 // Security Middleware
 app.use(helmet({
