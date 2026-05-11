@@ -148,7 +148,7 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
   if (test.completed) throw new AppError('test_already_submitted', 400);
 
   // Fetch full questions with correct answers
-  const questions = await Question.find({ _id: { $in: test.questions } });
+  const questions = await Question.find({ _id: { $in: test.questions } }).lean();
   const questionMap: any = {};
   questions.forEach(q => { questionMap[q._id.toString()] = q; });
 
@@ -224,7 +224,7 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
   if (!test) throw new AppError('test_not_found', 404);
 
   const answers: any[] = test.answers || [];
-  const questions = await Question.find({ _id: { $in: test.questions } });
+  const questions = await Question.find({ _id: { $in: test.questions } }).lean();
 
   // Merge questions with user answers
   const answerMap: any = {};
