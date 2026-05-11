@@ -4,6 +4,13 @@ const TestSchema = new mongoose.Schema({
   userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   testDate:        { type: String, required: true },   // 'YYYY-MM-DD' format (IST)
   questions:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
+  answers: [{
+    questionId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+    questionVersion: { type: Number, default: 1 },
+    selectedOption:  { type: String },
+    isCorrect:       { type: Boolean },
+    timeSpentSec:    { type: Number }
+  }],
   score:           { type: Number, default: 0 },
   totalQuestions:  { type: Number, default: 20 },
   timeTakenSec:    { type: Number },

@@ -26,6 +26,7 @@ const QuestionSchema = new mongoose.Schema({
   source:           { type: String, default: 'AI' },
   isActive:         { type: Boolean, default: true },
   generationDate:   { type: Date, default: Date.now },
+  version:          { type: Number, default: 1 },
   generationVersion:{ type: String, default: 'v1' },
   performance: {
     generationTimeMs: { type: Number },

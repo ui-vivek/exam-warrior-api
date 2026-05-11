@@ -4,7 +4,6 @@ import { Test } from '@/model/test.model';
 import { Question } from '@/model/question.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
-import { TestAnswer } from '@/model/testAnswer.model';
 import { getTodayIST, getTodayStart } from '@/utils/dateHelper';
 import { updateTopicStats, updateStreak } from '@/services/analyticsService';
 import { asyncHandler } from '@/utils/asyncHandler';
@@ -116,15 +115,22 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   const testObj = test.toObject();
   
   if (testObj.questions) {
-    testObj.questions = testObj.questions.map((q: any) => ({
-      ...q,
-      questionText: q.questionText?.[lang] || q.questionText?.en,
-      optionA: q.options?.a?.[lang] || q.options?.a?.en,
-      optionB: q.options?.b?.[lang] || q.options?.b?.en,
-      optionC: q.options?.c?.[lang] || q.options?.c?.en,
-      optionD: q.options?.d?.[lang] || q.options?.d?.en,
-      explanation: q.explanation?.[lang] || q.explanation?.en
-    }));
+    testObj.questions = testObj.questions.map((q: any) => {
+      const getT = (field: any) => {
+        if (typeof field === 'string') return field;
+        return field?.[lang] || field?.en || '';
+      };
+
+      return {
+        ...q,
+        questionText: getT(q.questionText),
+        optionA: q.options?.a ? getT(q.options.a) : q.optionA,
+        optionB: q.options?.b ? getT(q.options.b) : q.optionB,
+        optionC: q.options?.c ? getT(q.options.c) : q.optionC,
+        optionD: q.options?.d ? getT(q.options.d) : q.optionD,
+        explanation: q.explanation ? getT(q.explanation) : q.explanationHindi
+      };
+    });
   }
 
   res.json({ success: true, data: testObj });
@@ -177,16 +183,18 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
 
   console.log(`[Test Submission] Final Score Calculated: ${score} / ${totalQuestionsCount}`);
 
-  // Save answers
-  if (answerDocs.length > 0) {
-    await TestAnswer.insertMany(answerDocs);
-  }
-
-  // Update test
+  // Update test with answers and results
   await Test.findByIdAndUpdate(test._id, {
     score, 
     timeTakenSec: Number(timeTakenSec) || 0, 
     completed: true,
+    answers: answerDocs.map((a: any) => ({
+      questionId: a.questionId,
+      questionVersion: questionMap[a.questionId.toString()]?.version || 1,
+      selectedOption: a.selectedOption,
+      isCorrect: a.isCorrect,
+      timeSpentSec: a.timeSpentSec
+    })),
     updatedAt: new Date()
   });
 
@@ -215,24 +223,35 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
   const test = await Test.findOne({ _id: id, userId });
   if (!test) throw new AppError('test_not_found', 404);
 
-  const answers = await TestAnswer.find({ testId: test._id });
+  const answers: any[] = test.answers || [];
   const questions = await Question.find({ _id: { $in: test.questions } });
 
   // Merge questions with user answers
   const answerMap: any = {};
-  answers.forEach(a => { answerMap[a.questionId.toString()] = a; });
+  answers.forEach((a: any) => { 
+    if (a.questionId) {
+      answerMap[a.questionId.toString()] = a; 
+    }
+  });
 
   const result = questions.map(q => {
     const lang = req.lang || 'en';
+    
+    // Helper to get text from multilingual field or fallback to legacy string
+    const getTxt = (field: any, l: string) => {
+      if (typeof field === 'string') return field;
+      return field?.[l] || field?.en || '';
+    };
+
     return {
       questionId: q._id,
-      questionText: (q.questionText as any)?.[lang] || (q.questionText as any)?.en,
-      optionA: (q.options as any)?.a?.[lang] || (q.options as any)?.a?.en, 
-      optionB: (q.options as any)?.b?.[lang] || (q.options as any)?.b?.en, 
-      optionC: (q.options as any)?.c?.[lang] || (q.options as any)?.c?.en, 
-      optionD: (q.options as any)?.d?.[lang] || (q.options as any)?.d?.en,
+      questionText: getTxt(q.questionText, lang),
+      optionA: (q.options as any)?.a ? getTxt((q.options as any).a, lang) : (q as any).optionA, 
+      optionB: (q.options as any)?.b ? getTxt((q.options as any).b, lang) : (q as any).optionB, 
+      optionC: (q.options as any)?.c ? getTxt((q.options as any).c, lang) : (q as any).optionC, 
+      optionD: (q.options as any)?.d ? getTxt((q.options as any).d, lang) : (q as any).optionD,
       correctOption: q.correctOption,
-      explanation: (q.explanation as any)?.[lang] || (q.explanation as any)?.en,
+      explanationHindi: (q as any).explanationHindi || getTxt((q as any).explanation, lang),
       subject: q.subject, 
       topic: q.topic,
       selectedOption: answerMap[q._id.toString()]?.selectedOption,

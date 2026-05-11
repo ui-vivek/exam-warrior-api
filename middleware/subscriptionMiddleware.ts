@@ -1,51 +1,38 @@
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { User } from '@/model/user.model';
+import { AppError } from '@/utils/AppError';
+import { LangRequest } from '@/middleware/languageMiddleware';
 
-export const subscriptionMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+export const subscriptionMiddleware = async (req: LangRequest, res: Response, next: NextFunction) => {
   try {
-    const userId = (req as any).userId;
-    const user = await User.findById(userId);
+    const user = await User.findById(req.userId);
+    if (!user) throw new AppError('user_not_found', 404);
 
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const today = new Date();
-    
+    // 1. Check if subscription is active
     if (user.subscriptionStatus === 'active') {
-        if (user.subscriptionEndDate && user.subscriptionEndDate < today) {
-            user.subscriptionStatus = 'expired';
-            await user.save();
-            return res.status(403).json({ 
-                error: true, 
-                message: 'Aapka subscription khatam ho gaya hai. Please renew karein.',
-                code: 'SUBSCRIPTION_EXPIRED'
-            });
-        }
-        return next();
+      if (user.subscriptionEndDate && user.subscriptionEndDate < new Date()) {
+        // Subscription expired — update MongoDB
+        await User.findByIdAndUpdate(req.userId, { subscriptionStatus: 'expired' });
+        throw new AppError('SUBSCRIPTION_EXPIRED', 403);
+      }
+      return next();
     }
 
+    // 2. Check Trial Status
     if (user.subscriptionStatus === 'trial') {
-        // Trial logic: maybe first 7 days are free
-        const trialExpiry = new Date(user.trialStartDate);
-        trialExpiry.setDate(trialExpiry.getDate() + 7);
-        
-        if (today > trialExpiry) {
-            return res.status(403).json({ 
-                error: true, 
-                message: 'Aapka free trial khatam ho gaya hai. Please subscription lein.',
-                code: 'TRIAL_EXPIRED'
-            });
-        }
-        return next();
+      const trialEnd = new Date(user.trialStartDate);
+      trialEnd.setDate(trialEnd.getDate() + 7);
+      
+      if (new Date() > trialEnd) {
+        await User.findByIdAndUpdate(req.userId, { subscriptionStatus: 'expired' });
+        throw new AppError('TRIAL_EXPIRED', 403);
+      }
+      return next();
     }
 
-    res.status(403).json({ 
-        error: true, 
-        message: 'Aapke paas active subscription nahi hai.',
-        code: 'NO_SUBSCRIPTION'
-    });
+    // 3. If expired or no status
+    throw new AppError('SUBSCRIPTION_REQUIRED', 403);
   } catch (error) {
-    res.status(500).json({ message: 'Subscription check failed' });
+    next(error);
   }
 };

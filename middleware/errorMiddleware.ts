@@ -20,6 +20,7 @@ export function errorHandler(err: any, req: LangRequest, res: Response, next: Ne
   res.status(statusCode).json({
     success: false,
     message: translatedMessage,
+    code: err.code || err.message, // Fallback to message key as machine-readable code
     stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
   });
 }

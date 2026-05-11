@@ -74,6 +74,18 @@ export const messages: Record<string, Record<string, string>> = {
   already_active_sub: {
     en: 'You already have an active subscription.',
     hi: 'आपके पास पहले से ही एक सक्रिय सदस्यता है।'
+  },
+  SUBSCRIPTION_EXPIRED: {
+    en: 'Your subscription has expired. Please renew to continue.',
+    hi: 'आपकी सदस्यता समाप्त हो गई है। जारी रखने के लिए कृपया रिन्यू करें।'
+  },
+  TRIAL_EXPIRED: {
+    en: 'Your 7-day trial has expired. Please subscribe to continue.',
+    hi: 'आपका 7 दिनों का ट्रायल समाप्त हो गया है। जारी रखने के लिए कृपया सदस्यता लें।'
+  },
+  SUBSCRIPTION_REQUIRED: {
+    en: 'A premium subscription is required to access this feature.',
+    hi: 'इस फीचर तक पहुंचने के लिए प्रीमियम सदस्यता आवश्यक है।'
   }
 };
 
