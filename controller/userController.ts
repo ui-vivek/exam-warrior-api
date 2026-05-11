@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { getUsers, updateUserExamType } from '@/services/userService';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { asyncHandler } from '@/utils/asyncHandler';
+import { AppError } from '@/utils/AppError';
 
 import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
@@ -22,10 +23,7 @@ export const updateExamType = asyncHandler(async (req: AuthRequest, res: Respons
   const validTypes = ['SSC', 'RAILWAY', 'BANKING', 'UPSC'];
   
   if (!validTypes.includes(examType)) {
-    return res.status(400).json({ 
-      success: false, 
-      message: 'Invalid exam type' 
-    });
+    throw new AppError('Invalid exam type', 400);
   }
 
   const user = await updateUserExamType(req.userId!, examType);
@@ -40,7 +38,7 @@ export const updateExamType = asyncHandler(async (req: AuthRequest, res: Respons
 export const getUserStats = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId;
   const user = await User.findById(userId);
-  if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+  if (!user) throw new AppError('User not found', 404);
 
   const tests = await Test.find({ userId, completed: true });
   
@@ -69,9 +67,7 @@ export const getUserStats = asyncHandler(async (req: AuthRequest, res: Response)
 
 export const getWeakTopics = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId;
-  if (!userId) {
-    return res.status(401).json({ success: false, message: 'Unauthorized' });
-  }
+  if (!userId) throw new AppError('Unauthorized', 401);
   
   const topics = await UserTopicStat.find({
     userId: new mongoose.Types.ObjectId(userId),
