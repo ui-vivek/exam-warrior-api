@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { User } from '@/model/user.model';
 import { Payment } from '@/model/payment.model';
+import { Subscription } from '@/model/subscription.model';
 import { getRazorpay } from '@/utils/razorpay';
 import { asyncHandler } from '@/utils/asyncHandler';
 
@@ -37,12 +38,22 @@ export const createSubscription = asyncHandler(async (req: AuthRequest, res: Res
     total_count: planType === 'monthly' ? 12 : 1,
   });
 
+  // Create Subscription record in MongoDB
+  const subRecord = await Subscription.create({
+    userId,
+    razorpaySubscriptionId: subscription.id,
+    planId,
+    planType,
+    status: 'created',
+  });
+
   // Save subscription ID to User
   await User.findByIdAndUpdate(userId, {
     razorpaySubId: subscription.id,
+    subscriptionId: subRecord._id,
   });
 
-  // Save payment record in MongoDB
+  // Save payment record in MongoDB (Initial record)
   await Payment.create({
     userId,
     razorpaySubscriptionId: subscription.id,
@@ -117,6 +128,16 @@ export const verifyPayment = asyncHandler(async (req: AuthRequest, res: Response
       amount: subscriptionDetails?.plan?.item?.amount, // in paise
       status: 'active',
       paidAt: new Date(),
+    }
+  );
+
+  // Update Subscription record
+  await Subscription.findOneAndUpdate(
+    { razorpaySubscriptionId: razorpay_subscription_id },
+    {
+      status: 'active',
+      currentPeriodStart: new Date(),
+      currentPeriodEnd: subscriptionEndDate,
     }
   );
 
@@ -253,11 +274,26 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
         const subscriptionEndDate = new Date();
         subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + durationMonths);
 
+        // Update/Create Subscription record
+        const subDoc = await Subscription.findOneAndUpdate(
+          { razorpaySubscriptionId },
+          {
+            userId: paymentRecord.userId,
+            planId: subscriptionEntity?.plan_id || paymentRecord.planId,
+            planType: paymentRecord.planType,
+            status: 'active',
+            currentPeriodStart: new Date(),
+            currentPeriodEnd: subscriptionEndDate,
+          },
+          { upsert: true, new: true }
+        );
+
         // Activate user subscription — THE REAL ACTIVATION
         await User.findByIdAndUpdate(paymentRecord.userId, {
           subscriptionStatus: 'active',
           subscriptionEndDate,
           razorpaySubId: razorpaySubscriptionId,
+          subscriptionId: subDoc?._id,
         });
 
         console.log(`[Webhook] ✅ User ${paymentRecord.userId} subscription activated until ${subscriptionEndDate}`);
@@ -298,6 +334,11 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
         await Payment.findOneAndUpdate(
           { razorpaySubscriptionId: subscriptionId },
           { status: 'cancelled' }
+        );
+
+        await Subscription.findOneAndUpdate(
+          { razorpaySubscriptionId: subscriptionId },
+          { status: 'cancelled', endedAt: new Date() }
         );
 
         const user = await User.findOne({ razorpaySubId: subscriptionId });

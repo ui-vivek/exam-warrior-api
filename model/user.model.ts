@@ -9,6 +9,7 @@ const UserSchema = new mongoose.Schema({
   subscriptionEndDate:  { type: Date },
   razorpayCustomerId:   { type: String },
   razorpaySubId:        { type: String },
+  subscriptionId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
   streakCount:          { type: Number, default: 0 },
   lastActiveDate:       { type: Date },
   refreshToken:         { type: String }, // Store refresh token hash or value

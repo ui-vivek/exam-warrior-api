@@ -7,6 +7,9 @@ export function notFoundHandler(req: Request, res: Response, next: NextFunction)
 
 export function errorHandler(err: any, req: Request, res: Response, next: NextFunction) {
   const statusCode = err.statusCode || 500;
+  
+  // Log error for debugging
+  console.error('[Error]', err);
 
   res.status(statusCode).json({
     success: false,
