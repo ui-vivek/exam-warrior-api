@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Request, Response } from 'express';
 import crypto from 'crypto';
 import { AuthRequest } from '@/middleware/authMiddleware';
@@ -14,6 +15,29 @@ import { asyncHandler } from '@/utils/asyncHandler';
 export const createSubscription = asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.userId;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  // Check if user already has an active subscription to avoid double charging
+  const existingUser = await User.findById(userId);
+  if (existingUser?.subscriptionStatus === 'active') {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'You already have an active subscription.' 
+    });
+  }
+
+  // Also check for any pending payments in the last 5 minutes to prevent double clicks
+  const pendingPayment = await Payment.findOne({
+    userId,
+    status: 'created',
+    createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
+  });
+
+  if (pendingPayment) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'A payment is already being processed. Please wait a few minutes.' 
+    });
+  }
 
   const { planType } = req.body; // 'monthly' or 'yearly'
 
@@ -201,26 +225,24 @@ export const getPaymentHistory = asyncHandler(async (req: AuthRequest, res: Resp
  * POST /payments/webhook
  * Razorpay webhook — the ONLY trusted source of payment confirmation.
  * CRITICAL: Never trust frontend success. Only trust this webhook.
- * 
- * Events handled:
- *   - subscription.charged → payment success, activate subscription
- *   - subscription.cancelled → mark cancelled
- *   - payment.failed → mark failed
  */
 export const razorpayWebhook = async (req: Request, res: Response) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    // Step 1: Verify HMAC signature
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET!;
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
     const receivedSignature = req.headers['x-razorpay-signature'] as string;
 
-    if (!receivedSignature) {
-      console.error('[Webhook] Missing x-razorpay-signature header');
-      return res.status(400).json({ error: 'Missing signature' });
+    if (!webhookSecret || !receivedSignature) {
+      console.error('[Webhook] Missing webhook secret or signature header');
+      return res.status(400).json({ error: 'Missing configuration or signature' });
     }
 
-    // req.body must be raw string/buffer for HMAC verification
-    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-
+    // req.body is a Buffer because of express.raw() in server.ts
+    const rawBody = req.body;
+    
+    // Verify HMAC signature
     const expectedSignature = crypto
       .createHmac('sha256', webhookSecret)
       .update(rawBody)
@@ -228,11 +250,12 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
 
     if (expectedSignature !== receivedSignature) {
       console.error('[Webhook] Signature mismatch! Rejecting.');
+      await session.abortTransaction();
       return res.status(400).json({ error: 'Invalid signature' });
     }
 
     // Step 2: Parse event
-    const event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const event = JSON.parse(rawBody.toString());
     const eventType = event.event;
 
     console.log(`[Webhook] Received event: ${eventType}`);
@@ -244,126 +267,118 @@ export const razorpayWebhook = async (req: Request, res: Response) => {
 
       if (!paymentEntity) {
         console.error('[Webhook] No payment entity in payload');
-        return res.status(200).json({ status: 'ok' }); // Return 200 so Razorpay doesn't retry
+        await session.abortTransaction();
+        return res.status(200).json({ status: 'ok' });
       }
 
       const razorpayPaymentId = paymentEntity.id;
       const razorpaySubscriptionId = subscriptionEntity?.id || paymentEntity.subscription_id;
       const amount = paymentEntity.amount; // in paise
-      const method = paymentEntity.method; // upi, card, netbanking, wallet
-      const email = paymentEntity.email;
-      const contact = paymentEntity.contact;
+      const method = paymentEntity.method;
 
-      console.log(`[Webhook] Payment: ${razorpayPaymentId}, Sub: ${razorpaySubscriptionId}, Amount: ${amount}, Method: ${method}`);
+      // Idempotency check: Have we processed this payment ID already?
+      const existingPayment = await Payment.findOne({ razorpayPaymentId }).session(session);
+      if (existingPayment && existingPayment.status === 'active') {
+        console.log(`[Webhook] Payment ${razorpayPaymentId} already processed. Skipping.`);
+        await session.commitTransaction();
+        return res.status(200).json({ status: 'ok' });
+      }
 
-      // Find the payment record by subscription ID
-      const paymentRecord = await Payment.findOne({ razorpaySubscriptionId });
+      // Find the user/payment record
+      let paymentRecord = await Payment.findOne({ razorpaySubscriptionId }).session(session);
+      
+      // If no record, try finding user to create one
+      if (!paymentRecord) {
+        const user = await User.findOne({ razorpaySubId: razorpaySubscriptionId }).session(session);
+        if (user) {
+          paymentRecord = new Payment({
+            userId: user._id,
+            razorpaySubscriptionId,
+            planId: subscriptionEntity?.plan_id || 'unknown',
+            planType: 'monthly', // default if missing
+          });
+        }
+      }
 
       if (paymentRecord) {
-        // Update existing payment record
+        // Update payment record
         paymentRecord.razorpayPaymentId = razorpayPaymentId;
         paymentRecord.amount = amount;
         paymentRecord.method = method;
         paymentRecord.status = 'active';
         paymentRecord.paidAt = new Date();
-        await paymentRecord.save();
+        await paymentRecord.save({ session });
 
-        // Determine subscription end date
-        const planType = paymentRecord.planType;
+        // Calculate subscription end date
+        const planType = paymentRecord.planType || 'monthly';
         const durationMonths = planType === 'yearly' ? 12 : 1;
         const subscriptionEndDate = new Date();
         subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + durationMonths);
 
-        // Update/Create Subscription record
+        // Update Subscription document
         const subDoc = await Subscription.findOneAndUpdate(
           { razorpaySubscriptionId },
           {
             userId: paymentRecord.userId,
             planId: subscriptionEntity?.plan_id || paymentRecord.planId,
-            planType: paymentRecord.planType,
+            planType: planType,
             status: 'active',
             currentPeriodStart: new Date(),
             currentPeriodEnd: subscriptionEndDate,
           },
-          { upsert: true, new: true }
+          { upsert: true, new: true, session }
         );
 
-        // Activate user subscription — THE REAL ACTIVATION
+        // Update User profile
         await User.findByIdAndUpdate(paymentRecord.userId, {
           subscriptionStatus: 'active',
           subscriptionEndDate,
           razorpaySubId: razorpaySubscriptionId,
           subscriptionId: subDoc?._id,
-        });
+        }, { session });
 
-        console.log(`[Webhook] ✅ User ${paymentRecord.userId} subscription activated until ${subscriptionEndDate}`);
+        console.log(`[Webhook] ✅ Successfully processed ${eventType} for User ${paymentRecord.userId}`);
       } else {
-        // Payment record not found — create one (edge case: webhook arrived before create-subscription response)
-        console.warn(`[Webhook] No payment record found for sub: ${razorpaySubscriptionId}. Finding user by razorpaySubId.`);
-        
-        const user = await User.findOne({ razorpaySubId: razorpaySubscriptionId });
-        if (user) {
-          await Payment.create({
-            userId: user._id,
-            razorpayPaymentId,
-            razorpaySubscriptionId,
-            planId: subscriptionEntity?.plan_id || 'unknown',
-            planType: 'monthly', // default
-            amount,
-            method,
-            status: 'active',
-            paidAt: new Date(),
-          });
-
-          const subscriptionEndDate = new Date();
-          subscriptionEndDate.setMonth(subscriptionEndDate.getMonth() + 1);
-
-          await User.findByIdAndUpdate(user._id, {
-            subscriptionStatus: 'active',
-            subscriptionEndDate,
-          });
-
-          console.log(`[Webhook] ✅ User ${user._id} activated via fallback.`);
-        } else {
-          console.error(`[Webhook] Could not find user for subscription: ${razorpaySubscriptionId}`);
-        }
+        console.error(`[Webhook] No user/payment record found for subscription: ${razorpaySubscriptionId}`);
       }
-    } else if (eventType === 'subscription.cancelled') {
+    } 
+    
+    else if (eventType === 'subscription.cancelled') {
       const subscriptionId = event.payload?.subscription?.entity?.id;
       if (subscriptionId) {
-        await Payment.findOneAndUpdate(
+        await Payment.updateMany(
           { razorpaySubscriptionId: subscriptionId },
-          { status: 'cancelled' }
+          { status: 'cancelled' },
+          { session }
         );
 
         await Subscription.findOneAndUpdate(
           { razorpaySubscriptionId: subscriptionId },
-          { status: 'cancelled', endedAt: new Date() }
+          { status: 'cancelled', endedAt: new Date() },
+          { session }
         );
 
-        const user = await User.findOne({ razorpaySubId: subscriptionId });
-        if (user) {
-          await User.findByIdAndUpdate(user._id, { subscriptionStatus: 'expired' });
-          console.log(`[Webhook] User ${user._id} subscription cancelled.`);
-        }
-      }
-    } else if (eventType === 'payment.failed') {
-      const paymentEntity = event.payload?.payment?.entity;
-      const subscriptionId = paymentEntity?.subscription_id;
-      if (subscriptionId) {
-        await Payment.findOneAndUpdate(
-          { razorpaySubscriptionId: subscriptionId },
-          { status: 'failed' }
+        await User.findOneAndUpdate(
+          { razorpaySubId: subscriptionId },
+          { subscriptionStatus: 'expired' },
+          { session }
         );
-        console.log(`[Webhook] Payment failed for sub: ${subscriptionId}`);
+        
+        console.log(`[Webhook] Subscription ${subscriptionId} cancelled.`);
       }
     }
 
-    // Always return 200 to Razorpay so it doesn't retry
+    await session.commitTransaction();
     res.status(200).json({ status: 'ok' });
+
   } catch (error: any) {
-    console.error('[Webhook] Error processing webhook:', error);
-    // Still return 200 to prevent infinite retries
-    res.status(200).json({ status: 'ok' });
+    console.error('[Webhook] ERROR:', error.message);
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    // Always return 200 to Razorpay to prevent retry loops on logical errors
+    res.status(200).json({ status: 'ok', error: error.message });
+  } finally {
+    session.endSession();
   }
 };

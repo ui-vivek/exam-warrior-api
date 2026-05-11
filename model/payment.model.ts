@@ -16,5 +16,6 @@ const PaymentSchema = new mongoose.Schema({
 
 PaymentSchema.index({ userId: 1, status: 1 });
 PaymentSchema.index({ razorpaySubscriptionId: 1 });
+PaymentSchema.index({ razorpayPaymentId: 1 }, { unique: true, sparse: true });
 
 export const Payment = mongoose.model('Payment', PaymentSchema);

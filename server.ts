@@ -21,6 +21,9 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Webhook Raw Body Middleware (Must be before express.json())
+app.use('/api/v1/payments/webhook', express.raw({ type: 'application/json' }));
+
 // Standard Middleware
 app.use(cors({
   origin: [
