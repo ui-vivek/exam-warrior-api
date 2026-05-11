@@ -82,7 +82,8 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
           }
         }
       }
-    ]
+    ],
+    { updatePipeline: true }
   );
 };
 

@@ -101,6 +101,43 @@
       ]
     },
     {
+      "name": "Create-subscription",
+      "item": [
+        {
+          "name": "POST /create-subscription",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/create-subscription",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "create-subscription"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Exam-type",
       "item": [
         {
@@ -415,6 +452,43 @@
       ]
     },
     {
+      "name": "Verify",
+      "item": [
+        {
+          "name": "POST /verify",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/verify",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "verify"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Verify-otp",
       "item": [
         {
@@ -472,6 +546,43 @@
               ],
               "path": [
                 "weak-topics"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Webhook",
+      "item": [
+        {
+          "name": "POST /webhook",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/webhook",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhook"
               ]
             }
           },

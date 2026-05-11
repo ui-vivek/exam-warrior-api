@@ -1,26 +1,29 @@
-import { Request, Response } from 'express';
-import { User } from '@/model/user.model';
 import { authMiddleware } from '@/middleware/authMiddleware';
-const express = require('express') as typeof import('express');
+import {
+  createSubscription,
+  verifyPayment,
+  getPaymentStatus,
+  getPaymentHistory,
+  razorpayWebhook,
+} from '@/controller/paymentController';
 
+const express = require('express') as typeof import('express');
 const router = express.Router();
 
-router.get('/status', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const userId = (req as any).userId;
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+// Create a new Razorpay subscription
+router.post('/create-subscription', authMiddleware, createSubscription);
 
-    res.json({
-      success: true,
-      data: {
-        status: user.subscriptionStatus,
-        expiryDate: user.subscriptionEndDate
-      }
-    });
-  } catch (error: any) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+// Verify payment after Razorpay checkout (frontend fallback)
+router.post('/verify', authMiddleware, verifyPayment);
+
+// Razorpay webhook — THE trusted source of payment confirmation
+// No authMiddleware — Razorpay calls this directly
+router.post('/webhook', express.raw({ type: 'application/json' }), razorpayWebhook);
+
+// Get subscription status
+router.get('/status', authMiddleware, getPaymentStatus);
+
+// Get payment history
+router.get('/history', authMiddleware, getPaymentHistory);
 
 export default router;
