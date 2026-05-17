@@ -1,15 +1,12 @@
 import { Request, Response } from 'express';
 import { AuthService } from '@/services/authService';
 import { asyncHandler } from '@/utils/asyncHandler';
-import { AppError } from '@/utils/AppError';
 import { getMessage } from '@/utils/messages';
 import { LangRequest } from '@/middleware/languageMiddleware';
+import { SendOtpInput, VerifyOtpInput, RefreshTokenInput } from '@/validators/authValidator';
 
 export const requestOtp = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { phone } = req.body;
-  if (!phone) {
-    throw new AppError('phone_required', 400);
-  }
+  const { phone } = req.body as SendOtpInput;
 
   const result = await AuthService.requestOtp(phone);
   res.status(200).json({ 
@@ -20,10 +17,7 @@ export const requestOtp = asyncHandler(async (req: LangRequest, res: Response) =
 });
 
 export const verifyOtp = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { phone, otp, preferred_language } = req.body;
-  if (!phone || !otp) {
-    throw new AppError('phone_otp_required', 400);
-  }
+  const { phone, otp, preferred_language } = req.body as VerifyOtpInput;
 
   const result = await AuthService.verifyAndLogin(phone, otp, preferred_language);
   res.status(200).json({
@@ -34,10 +28,7 @@ export const verifyOtp = asyncHandler(async (req: LangRequest, res: Response) =>
 });
 
 export const refreshToken = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken) {
-    throw new AppError('token_required', 400);
-  }
+  const { refreshToken } = req.body as RefreshTokenInput;
 
   const result = await AuthService.refreshAccessToken(refreshToken);
   res.status(200).json({

@@ -21,7 +21,8 @@
     "middleware/**/*.ts",
     "model/**/*.ts",
     "router/**/*.ts",
-    "services/**/*.ts"
+    "services/**/*.ts",
+    "validators/**/*.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

@@ -1,11 +1,12 @@
 import { type Request, type Response } from 'express';
 import mongoose from 'mongoose';
-import { getUsers, updateUserExamType, updateUserLanguage } from '@/services/userService';
+import { getUsers, updateUserExamType, updateUserLanguage, updateUserProfile } from '@/services/userService';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { getMessage } from '@/utils/messages';
 import { LangRequest } from '@/middleware/languageMiddleware';
+import { UpdateProfileInput, UpdateLanguageInput, UpdateExamTypeInput } from '@/validators/userValidator';
 
 import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
@@ -21,12 +22,7 @@ export const listUsers = asyncHandler(async (req: LangRequest, res: Response) =>
 });
 
 export const updateExamType = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { examType } = req.body;
-  const validTypes = ['SSC', 'RAILWAY', 'BANKING', 'UPSC'];
-  
-  if (!validTypes.includes(examType)) {
-    throw new AppError('invalid_exam_type', 400);
-  }
+  const { examType } = req.body as UpdateExamTypeInput;
 
   const user = await updateUserExamType(req.userId!, examType);
   
@@ -38,18 +34,13 @@ export const updateExamType = asyncHandler(async (req: LangRequest, res: Respons
 });
 
 export const updateLanguage = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { preferredLanguage } = req.body;
-  const validLanguages = ['english', 'hindi'];
-  
-  if (!validLanguages.includes(preferredLanguage)) {
-    throw new AppError('Invalid language', 400);
-  }
+  const { preferredLanguage } = req.body as UpdateLanguageInput;
 
   const user = await updateUserLanguage(req.userId!, preferredLanguage);
   
   res.status(200).json({ 
     success: true, 
-    message: getMessage('language_updated', req.lang), // wait, if language_updated is not in messages, it will fall back to key or we can just send custom message. Let's check getMessage.
+    message: getMessage('language_updated', req.lang),
     data: user 
   });
 });
@@ -80,7 +71,35 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
       overallAccuracy: totalTests ? ((avgScore / 20) * 100).toFixed(1) : "0",
       subscriptionStatus: user.subscriptionStatus,
       preferredLanguage: user.preferredLanguage || 'english',
+      name: user.name || '',
+      phone: user.phone,
+      examType: user.examType || 'SSC',
+      state: user.state || '',
       trialDaysRemaining
+    }
+  });
+});
+
+export const updateProfile = asyncHandler(async (req: LangRequest, res: Response) => {
+  const { name, exam_type, preferred_language, state } = req.body as UpdateProfileInput;
+  
+  const updateData: any = {};
+  if (name !== undefined) updateData.name = name;
+  if (state !== undefined) updateData.state = state;
+  if (exam_type !== undefined) updateData.examType = exam_type;
+  if (preferred_language !== undefined) updateData.preferredLanguage = preferred_language;
+
+  const user = await updateUserProfile(req.userId!, updateData);
+
+  res.status(200).json({
+    success: true,
+    message: getMessage('profile_updated', req.lang),
+    data: {
+      name: user.name || '',
+      phone: user.phone,
+      examType: user.examType || 'SSC',
+      preferredLanguage: user.preferredLanguage || 'english',
+      state: user.state || ''
     }
   });
 });

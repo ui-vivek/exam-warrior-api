@@ -31,3 +31,17 @@ export async function updateUserLanguage(userId: string, preferredLanguage: stri
 
   return user;
 }
+
+export async function updateUserProfile(userId: string, data: { name?: string, examType?: string, preferredLanguage?: string, state?: string }) {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { $set: data },
+    { new: true }
+  );
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return user;
+}
