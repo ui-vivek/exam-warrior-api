@@ -13,7 +13,7 @@ const UserSchema = new mongoose.Schema({
   streakCount:          { type: Number, default: 0 },
   lastActiveDate:       { type: Date },
   refreshToken:         { type: String },
-  preferredLanguage:    { type: String, enum: ['en', 'hi'], default: 'hi' }
+  preferredLanguage:    { type: String, enum: ['english', 'hindi'], default: 'english' }
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

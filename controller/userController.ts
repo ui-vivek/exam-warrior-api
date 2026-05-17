@@ -1,6 +1,6 @@
 import { type Request, type Response } from 'express';
 import mongoose from 'mongoose';
-import { getUsers, updateUserExamType } from '@/services/userService';
+import { getUsers, updateUserExamType, updateUserLanguage } from '@/services/userService';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
@@ -37,6 +37,23 @@ export const updateExamType = asyncHandler(async (req: LangRequest, res: Respons
   });
 });
 
+export const updateLanguage = asyncHandler(async (req: LangRequest, res: Response) => {
+  const { preferredLanguage } = req.body;
+  const validLanguages = ['english', 'hindi'];
+  
+  if (!validLanguages.includes(preferredLanguage)) {
+    throw new AppError('Invalid language', 400);
+  }
+
+  const user = await updateUserLanguage(req.userId!, preferredLanguage);
+  
+  res.status(200).json({ 
+    success: true, 
+    message: getMessage('language_updated', req.lang), // wait, if language_updated is not in messages, it will fall back to key or we can just send custom message. Let's check getMessage.
+    data: user 
+  });
+});
+
 export const getUserStats = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
   const user = await User.findById(userId);
@@ -62,6 +79,7 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
       streakCount: user.streakCount,
       overallAccuracy: totalTests ? ((avgScore / 20) * 100).toFixed(1) : "0",
       subscriptionStatus: user.subscriptionStatus,
+      preferredLanguage: user.preferredLanguage || 'english',
       trialDaysRemaining
     }
   });

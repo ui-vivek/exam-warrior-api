@@ -20,12 +20,12 @@ export const requestOtp = asyncHandler(async (req: LangRequest, res: Response) =
 });
 
 export const verifyOtp = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { phone, otp } = req.body;
+  const { phone, otp, preferred_language } = req.body;
   if (!phone || !otp) {
     throw new AppError('phone_otp_required', 400);
   }
 
-  const result = await AuthService.verifyAndLogin(phone, otp);
+  const result = await AuthService.verifyAndLogin(phone, otp, preferred_language);
   res.status(200).json({
     success: true,
     message: getMessage('logged_in', req.lang),

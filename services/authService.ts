@@ -14,7 +14,7 @@ export class AuthService {
     return { message: result.message };
   }
 
-  static async verifyAndLogin(phone: string, otp: string) {
+  static async verifyAndLogin(phone: string, otp: string, preferredLanguage?: string) {
     const isValid = await OtpService.verifyOtp(phone, otp);
     if (!isValid) {
       throw new AppError('Invalid or expired OTP', 401);
@@ -28,9 +28,12 @@ export class AuthService {
         phone,
         subscriptionStatus: 'trial',
         trialStartDate: new Date(),
-        examType: 'SSC'
+        examType: 'SSC',
+        preferredLanguage: (preferredLanguage === 'hindi' ? 'hindi' : 'english')
       });
       isNewUser = true;
+    } else if (preferredLanguage === 'english' || preferredLanguage === 'hindi') {
+      user.preferredLanguage = preferredLanguage;
     }
 
     const tokens = this.generateTokens(user._id.toString(), user.phone);

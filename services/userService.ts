@@ -17,3 +17,17 @@ export async function updateUserExamType(userId: string, examType: string) {
 
   return user;
 }
+
+export async function updateUserLanguage(userId: string, preferredLanguage: string) {
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { preferredLanguage },
+    { new: true }
+  );
+  
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  return user;
+}

@@ -59,6 +59,10 @@ export const messages: Record<string, Record<string, string>> = {
     en: 'Exam type updated successfully.',
     hi: 'परीक्षा का प्रकार सफलतापूर्वक अपडेट किया गया।'
   },
+  language_updated: {
+    en: 'Preferred language updated successfully.',
+    hi: 'पसंदीदा भाषा सफलतापूर्वक अपडेट की गई।'
+  },
   invalid_exam_type: {
     en: 'Invalid exam type.',
     hi: 'अमान्य परीक्षा प्रकार।'
