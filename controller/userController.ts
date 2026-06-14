@@ -75,19 +75,21 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
       phone: user.phone,
       examType: user.examType || 'SSC',
       state: user.state || '',
+      avatar: user.avatar || 'aspirant',
       trialDaysRemaining
     }
   });
 });
 
 export const updateProfile = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { name, exam_type, preferred_language, state } = req.body as UpdateProfileInput;
+  const { name, exam_type, preferred_language, state, avatar } = req.body as UpdateProfileInput & { avatar?: string };
   
   const updateData: any = {};
   if (name !== undefined) updateData.name = name;
   if (state !== undefined) updateData.state = state;
   if (exam_type !== undefined) updateData.examType = exam_type;
   if (preferred_language !== undefined) updateData.preferredLanguage = preferred_language;
+  if (avatar !== undefined) updateData.avatar = avatar;
 
   const user = await updateUserProfile(req.userId!, updateData);
 
@@ -99,7 +101,8 @@ export const updateProfile = asyncHandler(async (req: LangRequest, res: Response
       phone: user.phone,
       examType: user.examType || 'SSC',
       preferredLanguage: user.preferredLanguage || 'english',
-      state: user.state || ''
+      state: user.state || '',
+      avatar: user.avatar || 'aspirant'
     }
   });
 });
@@ -145,5 +148,58 @@ export const getSubjectStats = asyncHandler(async (req: LangRequest, res: Respon
   res.status(200).json({
     success: true,
     data: formattedStats
+  });
+});
+
+/**
+ * GET /users/leaderboard
+ * Global "All India Rank" — ranks users by total score across completed tests.
+ */
+export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const ranking = await Test.aggregate([
+    { $match: { completed: true } },
+    {
+      $group: {
+        _id: '$userId',
+        totalScore: { $sum: '$score' },
+        tests: { $sum: 1 },
+      },
+    },
+    { $sort: { totalScore: -1, tests: -1 } },
+  ]);
+
+  const myObjectId = new mongoose.Types.ObjectId(userId);
+  const myIndex = ranking.findIndex((r: any) => r._id.equals(myObjectId));
+  const myRank = myIndex >= 0 ? myIndex + 1 : null;
+
+  const top = ranking.slice(0, 20);
+  const topUsers = await User.find({ _id: { $in: top.map((t: any) => t._id) } })
+    .select('name examType')
+    .lean();
+  const userMap: Record<string, any> = {};
+  topUsers.forEach((u: any) => { userMap[u._id.toString()] = u; });
+
+  const leaderboard = top.map((row: any, i: number) => {
+    const u = userMap[row._id.toString()] || {};
+    return {
+      rank: i + 1,
+      name: (u.name && u.name.trim()) ? u.name : 'Warrior',
+      examType: u.examType || 'SSC',
+      totalScore: row.totalScore,
+      tests: row.tests,
+      isMe: row._id.equals(myObjectId),
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    data: {
+      myRank,
+      totalPlayers: ranking.length,
+      leaderboard,
+    },
   });
 });

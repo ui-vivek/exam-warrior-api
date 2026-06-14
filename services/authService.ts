@@ -15,9 +15,19 @@ export class AuthService {
   }
 
   static async verifyAndLogin(phone: string, otp: string, preferredLanguage?: string) {
-    const isValid = await OtpService.verifyOtp(phone, otp);
+    let isValid = false;
+    try {
+      isValid = await OtpService.verifyOtp(phone, otp);
+    } catch (err: any) {
+      // OtpService throws a lockout signal for too many failed attempts.
+      if (err?.code === 'ACCOUNT_LOCKED') {
+        throw new AppError(err.message || 'Account is temporarily locked.', 429, 'ACCOUNT_LOCKED');
+      }
+      throw err;
+    }
+
     if (!isValid) {
-      throw new AppError('Invalid or expired OTP', 401);
+      throw new AppError('Galat ya expire ho chuka OTP. Dobara try karein.', 401, 'INVALID_OTP');
     }
 
     let user = await User.findOne({ phone });

@@ -10,9 +10,13 @@ export const validate = (schema: ZodTypeAny) => {
         query: req.query,
         params: req.params,
       }) as any;
-      // Replace properties with parsed, validated, and typed values
       req.body = parsed.body;
-      req.query = parsed.query;
+      Object.defineProperty(req, 'query', {
+        value: parsed.query,
+        writable: true,
+        enumerable: true,
+        configurable: true
+      });
       req.params = parsed.params;
       
       next();

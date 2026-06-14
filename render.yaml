@@ -1,0 +1,43 @@
+# Render Blueprint for the Exam Warrior API.
+# Deploy: push this file to the exam-warrior-api repo, then in Render
+# click "New +" > "Blueprint" and pick the repo. Render reads this file.
+#
+# You must set the "sync: false" secrets yourself in the Render dashboard
+# (they are never stored in git). JWT secrets are auto-generated.
+services:
+  - type: web
+    name: exam-warrior-api
+    runtime: node
+    plan: free
+    branch: main
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Free MongoDB Atlas connection string (mongodb+srv://...). Set manually.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: REFRESH_EXPIRES_IN
+        value: 7d
+      # OTP login needs ONE working provider — Twilio Verify or MSG91.
+      # Without these, testers cannot log in. Set the ones you use.
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_VERIFY_SID
+        sync: false
+      - key: MSG91_AUTH_KEY
+        sync: false
+      - key: MSG91_SENDER_ID
+        sync: false
+      - key: MSG91_TEMPLATE_ID
+        sync: false

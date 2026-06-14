@@ -32,7 +32,7 @@ export async function updateUserLanguage(userId: string, preferredLanguage: stri
   return user;
 }
 
-export async function updateUserProfile(userId: string, data: { name?: string, examType?: string, preferredLanguage?: string, state?: string }) {
+export async function updateUserProfile(userId: string, data: { name?: string, examType?: string, preferredLanguage?: string, state?: string, avatar?: string }) {
   const user = await User.findByIdAndUpdate(
     userId,
     { $set: data },

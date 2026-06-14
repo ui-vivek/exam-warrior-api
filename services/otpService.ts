@@ -12,7 +12,7 @@ export class OtpService {
 
     // 1. Validate phone (Skip for dummy)
     if (!isDummy && !/^[6-9]\d{9}$/.test(phone)) {
-      return { success: false, message: 'Please enter a valid 10-digit phone number', code: 'INVALID_PHONE' };
+      return { success: false, message: 'Sahi 10-digit phone number daalein', code: 'INVALID_PHONE' };
     }
 
     // 2. Check for Account Lockout
@@ -25,23 +25,24 @@ export class OtpService {
       const minutesLeft = Math.ceil((existingLock.lockedUntil!.getTime() - Date.now()) / 60000);
       return { 
         success: false, 
-        message: `Account is locked due to too many failed attempts. Please try again after ${minutesLeft} minutes.`, 
-        code: 'ACCOUNT_LOCKED' 
+        message: `Bahut zyada galat attempts. ${minutesLeft} minute baad try karein.`,
+        code: 'ACCOUNT_LOCKED'
       };
     }
 
     // 3. Rate limit (Skip for dummy)
     if (!isDummy) {
+      // Max 3 OTPs per phone per hour (matches issue #4 Definition of Done).
       const recentOtps = await OtpStore.countDocuments({
         phone,
-        createdAt: { $gte: new Date(Date.now() - 300000) } 
+        createdAt: { $gte: new Date(Date.now() - 3600000) }
       });
-      
+
       if (recentOtps >= 3) {
-        return { 
-          success: false, 
-          message: 'You have requested too many OTPs. Please wait 5 minutes before trying again.', 
-          code: 'RATE_LIMIT' 
+        return {
+          success: false,
+          message: '1 ghante mein sirf 3 OTP bhej sakte hain. Thodi der baad try karein.',
+          code: 'RATE_LIMIT'
         };
       }
     }
@@ -57,7 +58,7 @@ export class OtpService {
         expiresAt: new Date(Date.now() + 600000),
       });
       console.log(`[DUMMY AUTH] OTP for ${phone} is ${this.DUMMY_OTP}`);
-      return { success: true, message: 'OTP sent successfully' };
+      return { success: true, message: 'OTP bhej diya gaya hai' };
     }
 
     // 5. Tracking in Database for real numbers
@@ -72,10 +73,10 @@ export class OtpService {
     const sent = await this.sendViaTwilioVerify(phone);
 
     if (!sent) {
-      return { success: false, message: 'Failed to send SMS. Please try again later.', code: 'SMS_ERROR' };
+      return { success: false, message: 'OTP bhejne mein dikkat aayi. Thodi der baad try karein.', code: 'SMS_ERROR' };
     }
 
-    return { success: true, message: 'OTP sent successfully' };
+    return { success: true, message: 'OTP bhej diya gaya hai' };
   }
 
   private static async sendViaTwilioVerify(phone: string): Promise<boolean> {
@@ -106,7 +107,7 @@ export class OtpService {
     });
 
     if (existingLock) {
-      const error: any = new Error('Account is temporarily locked.');
+      const error: any = new Error('Account thodi der ke liye lock hai. Baad mein try karein.');
       error.code = 'ACCOUNT_LOCKED';
       throw error;
     }
@@ -144,7 +145,7 @@ export class OtpService {
               { _id: updatedRecord._id },
               { $set: { lockedUntil: new Date(Date.now() + 1800000) } } 
             );
-            const error: any = new Error('Too many failed attempts. Account locked for 30 minutes.');
+            const error: any = new Error('Bahut zyada galat OTP. 30 minute baad try karein.');
             error.code = 'ACCOUNT_LOCKED';
             throw error;
           }

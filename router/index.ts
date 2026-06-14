@@ -5,6 +5,7 @@ import aiRouter from '@/router/aiRouter';
 import questionRouter from '@/router/questionRouter';
 import testRouter from '@/router/testRouter';
 import paymentRouter from '@/router/paymentRouter';
+import roomRouter from '@/router/roomRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -17,5 +18,6 @@ router.use('/ai', aiRouter);
 router.use('/questions', questionRouter);
 router.use('/tests', testRouter);
 router.use('/payments', paymentRouter);
+router.use('/rooms', roomRouter);
 
 export default router;

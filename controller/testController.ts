@@ -18,7 +18,12 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
 
   // Check if test already exists for today
   let test = await Test.findOne({ userId, testDate: today })
-    .populate('questions', '-correctOption -explanationHindi');
+    .populate('questions', '-correctOption -explanation');
+
+  // If test exists, filter out any questions that were deleted from DB (populated as null)
+  if (test && test.questions) {
+    test.questions = test.questions.filter((q: any) => q !== null);
+  }
 
   // If test exists but questions couldn't be populated (e.g. deleted from DB), re-generate
   if (test && (!test.questions || test.questions.length === 0)) {
@@ -84,29 +89,16 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
       questions.push(...finalFallback);
     }
 
-    // If not enough questions from today, fallback to any active questions of that examType
-    if (questions.length < 20) {
-      const fallbackQuestions = await Question.aggregate([
-        { $match: { examType: user.examType, isActive: true } },
-        { $sample: { size: 20 } }
-      ]);
-      
-      if (fallbackQuestions.length === 0) {
-        throw new AppError('no_questions_found', 404);
-      }
-      
-      test = await Test.create({
-        userId,
-        testDate: today,
-        questions: fallbackQuestions.map(q => q._id),
-      });
-    } else {
-      test = await Test.create({
-        userId,
-        testDate: today,
-        questions: questions.map(q => q._id),
-      });
+    if (questions.length === 0) {
+      throw new AppError('no_questions_found', 404);
     }
+
+    test = await Test.create({
+      userId,
+      testDate: today,
+      questions: questions.map(q => q._id),
+      totalQuestions: questions.length
+    });
 
     test = await test.populate('questions', '-correctOption -explanation');
   }
@@ -115,22 +107,24 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   const testObj = test.toObject();
   
   if (testObj.questions) {
-    testObj.questions = testObj.questions.map((q: any) => {
-      const getT = (field: any) => {
-        if (typeof field === 'string') return field;
-        return field?.[lang] || field?.en || '';
-      };
+    testObj.questions = testObj.questions
+      .filter((q: any) => q !== null && q !== undefined)
+      .map((q: any) => {
+        const getT = (field: any) => {
+          if (typeof field === 'string') return field;
+          return field?.[lang] || field?.en || '';
+        };
 
-      return {
-        ...q,
-        questionText: getT(q.questionText),
-        optionA: q.options?.a ? getT(q.options.a) : q.optionA,
-        optionB: q.options?.b ? getT(q.options.b) : q.optionB,
-        optionC: q.options?.c ? getT(q.options.c) : q.optionC,
-        optionD: q.options?.d ? getT(q.options.d) : q.optionD,
-        explanation: q.explanation ? getT(q.explanation) : q.explanationHindi
-      };
-    });
+        return {
+          ...q,
+          questionText: getT(q.questionText),
+          optionA: q.options?.a ? getT(q.options.a) : q.optionA,
+          optionB: q.options?.b ? getT(q.options.b) : q.optionB,
+          optionC: q.options?.c ? getT(q.options.c) : q.optionC,
+          optionD: q.options?.d ? getT(q.options.d) : q.optionD,
+          explanation: q.explanation ? getT(q.explanation) : q.explanationHindi
+        };
+      });
   }
 
   res.json({ success: true, data: testObj });

@@ -14,7 +14,8 @@ const UserSchema = new mongoose.Schema({
   lastActiveDate:       { type: Date },
   refreshToken:         { type: String },
   preferredLanguage:    { type: String, enum: ['english', 'hindi'], default: 'english' },
-  state:                { type: String }
+  state:                { type: String },
+  avatar:               { type: String, default: 'aspirant' }
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);

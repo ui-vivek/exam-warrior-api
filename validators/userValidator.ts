@@ -9,7 +9,8 @@ export const updateProfileSchema = z.object({
     preferred_language: z.enum(['english', 'hindi'], {
       message: 'Invalid language'
     }).optional(),
-    state: z.string().optional()
+    state: z.string().optional(),
+    avatar: z.string().optional()
   })
 });
 
