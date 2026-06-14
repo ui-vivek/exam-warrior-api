@@ -8,7 +8,8 @@ import { LangRequest } from '@/middleware/languageMiddleware';
 
 const pickLang = (field: any, lang: string): string => {
   if (typeof field === 'string') return field;
-  return field?.[lang] || field?.en || '';
+  // Fall back across languages so content shows even if one is empty.
+  return field?.[lang] || field?.en || field?.hi || '';
 };
 
 /**
@@ -61,7 +62,8 @@ export const listBookmarks = asyncHandler(async (req: LangRequest, res: Response
 
   const bookmarks = await Bookmark.find({ userId })
     .sort({ createdAt: -1 })
-    .populate('questionId');
+    .populate('questionId')
+    .lean();
 
   const data = bookmarks
     .filter((b: any) => b.questionId)

@@ -10,7 +10,8 @@ import { LangRequest } from '@/middleware/languageMiddleware';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
 const pickLang = (field: any, lang: string): string => {
   if (typeof field === 'string') return field;
-  return field?.[lang] || field?.en || '';
+  // Fall back across languages so content shows even if one is empty.
+  return field?.[lang] || field?.en || field?.hi || '';
 };
 
 const genCode = (): string =>

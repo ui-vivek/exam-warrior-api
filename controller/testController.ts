@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { Test } from '@/model/test.model';
 import { Question } from '@/model/question.model';
+import { Bookmark } from '@/model/bookmark.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { getTodayIST, getTodayStart } from '@/utils/dateHelper';
@@ -112,7 +113,8 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
       .map((q: any) => {
         const getT = (field: any) => {
           if (typeof field === 'string') return field;
-          return field?.[lang] || field?.en || '';
+          // Fall back across languages so content shows even if one is empty.
+          return field?.[lang] || field?.en || field?.hi || '';
         };
 
         return {
@@ -220,11 +222,17 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
   const answers: any[] = test.answers || [];
   const questions = await Question.find({ _id: { $in: test.questions } }).lean();
 
+  // Which of these questions has the user already bookmarked?
+  const bookmarks = await Bookmark.find({ userId, questionId: { $in: test.questions } })
+    .select('questionId')
+    .lean();
+  const bookmarkedSet = new Set(bookmarks.map((b: any) => b.questionId.toString()));
+
   // Merge questions with user answers
   const answerMap: any = {};
-  answers.forEach((a: any) => { 
+  answers.forEach((a: any) => {
     if (a.questionId) {
-      answerMap[a.questionId.toString()] = a; 
+      answerMap[a.questionId.toString()] = a;
     }
   });
 
@@ -234,7 +242,8 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
     // Helper to get text from multilingual field or fallback to legacy string
     const getTxt = (field: any, l: string) => {
       if (typeof field === 'string') return field;
-      return field?.[l] || field?.en || '';
+      // Fall back across languages so content shows even if one is empty.
+      return field?.[l] || field?.en || field?.hi || '';
     };
 
     return {
@@ -250,6 +259,7 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
       topic: q.topic,
       selectedOption: answerMap[q._id.toString()]?.selectedOption,
       isCorrect: answerMap[q._id.toString()]?.isCorrect,
+      isBookmarked: bookmarkedSet.has(q._id.toString()),
     };
   });
 
