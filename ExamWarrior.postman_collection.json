@@ -6,8 +6,216 @@
   },
   "item": [
     {
+      "name": ":code",
+      "item": [
+        {
+          "name": "POST /:code/join",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:code/join",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code",
+                "join"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /:code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/:code",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /:code/start",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:code/start",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code",
+                "start"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /:code/test",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/:code/test",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code",
+                "test"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /:code/submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"answers\": [\n        {\n            \"questionId\": \"65f123456789abcdef012345\",\n            \"selectedOption\": \"a\",\n            \"timeSpentSec\": 15\n        },\n        {\n            \"questionId\": \"65f123456789abcdef012346\",\n            \"selectedOption\": \"c\",\n            \"timeSpentSec\": 10\n        }\n    ],\n    \"timeTakenSec\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:code/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code",
+                "submit"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /:code/leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/:code/leaderboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":code",
+                "leaderboard"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": ":id",
       "item": [
+        {
+          "name": "POST,DELETE /:id/bookmark",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/:id/bookmark",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                ":id",
+                "bookmark"
+              ]
+            }
+          },
+          "response": []
+        },
         {
           "name": "POST /:id/report",
           "request": {
@@ -101,6 +309,34 @@
       ]
     },
     {
+      "name": "Bookmarks",
+      "item": [
+        {
+          "name": "GET /bookmarks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/bookmarks",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bookmarks"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Create-subscription",
       "item": [
         {
@@ -178,7 +414,7 @@
       "name": "General",
       "item": [
         {
-          "name": "GET /",
+          "name": "GET,POST /",
           "request": {
             "method": "GET",
             "header": [
@@ -258,6 +494,108 @@
               ],
               "path": [
                 "history"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Language",
+      "item": [
+        {
+          "name": "PUT /language",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/language",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "language"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Leaderboard",
+      "item": [
+        {
+          "name": "GET /leaderboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/leaderboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "leaderboard"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "PUT /profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/profile",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "profile"
               ]
             }
           },

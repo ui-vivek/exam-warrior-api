@@ -31,8 +31,25 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
     createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
   });
 
-  if (pendingPayment) {
-    throw new AppError('payment_processing', 400);
+  // If a recent order is still pending, resume it (return its checkout link)
+  // instead of blocking — avoids "payment already processing" during retries.
+  if (pendingPayment?.razorpaySubscriptionId) {
+    try {
+      const existing: any = await getRazorpay()
+        .subscriptions.fetch(pendingPayment.razorpaySubscriptionId);
+      if (existing && (existing.status === 'created' || existing.status === 'authenticated')) {
+        return res.json({
+          success: true,
+          data: {
+            subscriptionId: existing.id,
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+            shortUrl: existing.short_url,
+          },
+        });
+      }
+    } catch (_e) {
+      // Couldn't fetch it — fall through and create a fresh order.
+    }
   }
 
   const { planType } = req.body; // 'monthly' or 'yearly'
@@ -87,6 +104,9 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
     data: {
       subscriptionId: subscription.id,
       razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+      // Razorpay-hosted checkout page; opening this lets the user pay without
+      // bundling the native checkout SDK. The webhook activates on success.
+      shortUrl: (subscription as any).short_url,
     },
   });
 });
