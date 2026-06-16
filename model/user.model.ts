@@ -15,7 +15,16 @@ const UserSchema = new mongoose.Schema({
   refreshToken:         { type: String },
   preferredLanguage:    { type: String, enum: ['english', 'hindi'], default: 'english' },
   state:                { type: String },
-  avatar:               { type: String, default: 'aspirant' }
+  avatar:               { type: String, default: 'aspirant' },
+  // Daily rank snapshot used to show day-over-day rank movement on the
+  // leaderboard. Updated lazily whenever the user fetches the leaderboard.
+  rankTrack: {
+    dateKey:        { type: String },   // 'YYYY-MM-DD' of the latest recording
+    allIndiaToday:  { type: Number },   // today's all-India rank
+    allIndiaPrev:   { type: Number },   // previous day's all-India rank (baseline)
+    stateToday:     { type: Number },   // today's state rank
+    statePrev:      { type: Number },   // previous day's state rank (baseline)
+  },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
