@@ -50,8 +50,8 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
   const user = await User.findById(userId);
   if (!user) throw new AppError('user_not_found', 404);
 
-  const tests = await Test.find({ userId, completed: true });
-  
+  const tests = await Test.find({ userId, completed: true, type: { $ne: 'practice' } });
+
   const totalTests = tests.length;
   const totalScore = tests.reduce((acc, curr) => acc + (curr.score || 0), 0);
   const avgScore = totalTests > 0 ? totalScore / totalTests : 0;
@@ -159,8 +159,17 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
   const userId = req.userId;
   if (!userId) throw new AppError('unauthorized', 401);
 
+  const myObjectId = new mongoose.Types.ObjectId(userId);
+
+  // The requesting user (as a document so we can persist the rank snapshot).
+  const me = await User.findById(userId);
+  const myState = ((me as any)?.state || '').trim();
+
+  // Rank every user by total score, and attach their profile (name, examType,
+  // state) in the same aggregation so we can derive BOTH the all-India and the
+  // state leaderboard from one sorted list.
   const ranking = await Test.aggregate([
-    { $match: { completed: true } },
+    { $match: { completed: true, type: { $ne: 'practice' } } },
     {
       $group: {
         _id: '$userId',
@@ -169,30 +178,98 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
       },
     },
     { $sort: { totalScore: -1, tests: -1 } },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'user',
+      },
+    },
+    { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        totalScore: 1,
+        tests: 1,
+        name: '$user.name',
+        examType: '$user.examType',
+        state: '$user.state',
+      },
+    },
   ]);
 
-  const myObjectId = new mongoose.Types.ObjectId(userId);
-  const myIndex = ranking.findIndex((r: any) => r._id.equals(myObjectId));
-  const myRank = myIndex >= 0 ? myIndex + 1 : null;
-
-  const top = ranking.slice(0, 20);
-  const topUsers = await User.find({ _id: { $in: top.map((t: any) => t._id) } })
-    .select('name examType')
-    .lean();
-  const userMap: Record<string, any> = {};
-  topUsers.forEach((u: any) => { userMap[u._id.toString()] = u; });
-
-  const leaderboard = top.map((row: any, i: number) => {
-    const u = userMap[row._id.toString()] || {};
-    return {
+  // Build display rows (top 20) from any pre-sorted slice of the ranking.
+  const buildRows = (rows: any[]) =>
+    rows.slice(0, 20).map((row: any, i: number) => ({
       rank: i + 1,
-      name: (u.name && u.name.trim()) ? u.name : 'Warrior',
-      examType: u.examType || 'SSC',
+      name: row.name && row.name.trim() ? row.name : 'Warrior',
+      examType: row.examType || 'SSC',
+      state: row.state || '',
       totalScore: row.totalScore,
       tests: row.tests,
       isMe: row._id.equals(myObjectId),
-    };
-  });
+    }));
+
+  // ---- All India ----
+  const myIndex = ranking.findIndex((r: any) => r._id.equals(myObjectId));
+  const myRank = myIndex >= 0 ? myIndex + 1 : null;
+  const leaderboard = buildRows(ranking);
+
+  // ---- State (same ordering, filtered to the user's state) ----
+  let stateRank: number | null = null;
+  let stateTotalPlayers = 0;
+  let stateLeaderboard: any[] = [];
+  if (myState) {
+    const stateRanking = ranking.filter(
+      (r: any) => (r.state || '').trim().toLowerCase() === myState.toLowerCase(),
+    );
+    stateTotalPlayers = stateRanking.length;
+    const sIndex = stateRanking.findIndex((r: any) => r._id.equals(myObjectId));
+    stateRank = sIndex >= 0 ? sIndex + 1 : null;
+    stateLeaderboard = buildRows(stateRanking);
+  }
+
+  // ---- Day-over-day rank movement ----
+  // We keep a per-day snapshot on the user. The baseline ("prev") is the rank
+  // recorded on the most recent earlier day. Change is signed so that a POSITIVE
+  // value means the user IMPROVED (moved up — i.e. their rank number went down).
+  let allIndiaRankChange: number | null = null;
+  let stateRankChange: number | null = null;
+  if (me) {
+    const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const track: any = (me as any).rankTrack || {};
+
+    let allIndiaPrev: number | null;
+    let statePrev: number | null;
+
+    if (track.dateKey === todayKey) {
+      // Same day: keep the existing baseline, just refresh today's live values.
+      allIndiaPrev = track.allIndiaPrev ?? null;
+      statePrev = track.statePrev ?? null;
+      track.allIndiaToday = myRank;
+      track.stateToday = stateRank;
+    } else {
+      // New day: yesterday's recorded rank becomes the new baseline.
+      allIndiaPrev = track.allIndiaToday ?? null;
+      statePrev = track.stateToday ?? null;
+      track.allIndiaPrev = allIndiaPrev;
+      track.statePrev = statePrev;
+      track.allIndiaToday = myRank;
+      track.stateToday = stateRank;
+      track.dateKey = todayKey;
+    }
+
+    (me as any).rankTrack = track;
+    me.markModified('rankTrack');
+    await me.save();
+
+    if (allIndiaPrev != null && myRank != null) {
+      allIndiaRankChange = allIndiaPrev - myRank;
+    }
+    if (statePrev != null && stateRank != null) {
+      stateRankChange = statePrev - stateRank;
+    }
+  }
 
   res.status(200).json({
     success: true,
@@ -200,6 +277,12 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
       myRank,
       totalPlayers: ranking.length,
       leaderboard,
+      allIndiaRankChange,
+      state: myState || null,
+      stateRank,
+      stateTotalPlayers,
+      stateLeaderboard,
+      stateRankChange,
     },
   });
 });

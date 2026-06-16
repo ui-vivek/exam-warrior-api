@@ -12,6 +12,77 @@ import { AppError } from '@/utils/AppError';
 import { getMessage } from '@/utils/messages';
 import { LangRequest } from '@/middleware/languageMiddleware';
 
+/** Maps a topic accuracy % to a friendly mastery level. */
+const masteryLevel = (acc: number): string => {
+  if (acc < 50) return 'Weak';
+  if (acc < 70) return 'Improving';
+  if (acc < 85) return 'Strong';
+  return 'Mastered';
+};
+
+/**
+ * POST /tests/practice  { subject, topic }
+ * Generates a focused 10-question drill for a single (weak) topic.
+ * Marked type:'practice' so it never counts as the daily test / streak.
+ */
+export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const user = await User.findById(userId);
+  if (!user) throw new AppError('user_not_found', 404);
+
+  const subject = String(req.body.subject || '').trim();
+  const topic = String(req.body.topic || '').trim();
+  if (!topic) throw new AppError('topic_required', 400);
+
+  const PRACTICE_SIZE = 10;
+  const questions = await Question.aggregate([
+    {
+      $match: {
+        examType: user.examType,
+        isActive: true,
+        topic,
+        ...(subject ? { subject } : {}),
+      },
+    },
+    { $sample: { size: PRACTICE_SIZE } },
+  ]);
+
+  if (questions.length === 0) throw new AppError('no_questions_found', 404);
+
+  let test = await Test.create({
+    userId,
+    testDate: `practice-${Date.now()}`,
+    type: 'practice',
+    subject: subject || questions[0].subject,
+    topic,
+    questions: questions.map((q: any) => q._id),
+    totalQuestions: questions.length,
+  });
+
+  test = await test.populate('questions', '-correctOption -explanation');
+
+  const lang = req.lang || 'en';
+  const testObj: any = test.toObject();
+  const getT = (field: any) => {
+    if (typeof field === 'string') return field;
+    return field?.[lang] || field?.en || field?.hi || '';
+  };
+  testObj.questions = (testObj.questions || [])
+    .filter((q: any) => q)
+    .map((q: any) => ({
+      ...q,
+      questionText: getT(q.questionText),
+      optionA: q.options?.a ? getT(q.options.a) : q.optionA,
+      optionB: q.options?.b ? getT(q.options.b) : q.optionB,
+      optionC: q.options?.c ? getT(q.options.c) : q.optionC,
+      optionD: q.options?.d ? getT(q.options.d) : q.optionD,
+    }));
+
+  res.json({ success: true, data: testObj });
+});
+
 export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
   if (!userId) throw new AppError('unauthorized', 401);
@@ -194,21 +265,52 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
     updatedAt: new Date()
   });
 
+  // For a practice drill, capture the topic's accuracy BEFORE this attempt.
+  const isPractice = test.type === 'practice';
+  let beforeAcc = 0;
+  if (isPractice && test.subject && test.topic) {
+    const before = await UserTopicStat
+      .findOne({ userId, subject: test.subject, topic: test.topic })
+      .lean();
+    beforeAcc = before ? Math.round((before.accuracyPct || 0) * 10) / 10 : 0;
+  }
+
   // Update topic stats
   await updateTopicStats(userId, answerDocs, questionMap);
 
-  // Update streak
-  await updateStreak(userId);
+  // Streak counts only for the daily mock, not practice drills.
+  if (!isPractice) {
+    await updateStreak(userId);
+  }
 
-  res.json({ 
-    success: true, 
-    data: { 
-      score, 
-      total: totalQuestionsCount, 
-      accuracyPct: ((score / totalQuestionsCount) * 100).toFixed(1), 
-      timeTakenSec 
-    } 
-  });
+  const accuracyPct = ((score / totalQuestionsCount) * 100).toFixed(1);
+  const responseData: any = {
+    score,
+    total: totalQuestionsCount,
+    accuracyPct,
+    timeTakenSec,
+  };
+
+  // Report how much this practice drill moved the topic's accuracy.
+  if (isPractice && test.subject && test.topic) {
+    const after = await UserTopicStat
+      .findOne({ userId, subject: test.subject, topic: test.topic })
+      .lean() as any;
+    const afterAcc = after ? Math.round((after.accuracyPct || 0) * 10) / 10 : 0;
+    responseData.improvement = {
+      subject: test.subject,
+      topic: test.topic,
+      thisTestAccuracy: Number(accuracyPct),
+      beforeAccuracy: beforeAcc,
+      afterAccuracy: afterAcc,
+      delta: Math.round((afterAcc - beforeAcc) * 10) / 10,
+      beforeLevel: masteryLevel(beforeAcc),
+      afterLevel: masteryLevel(afterAcc),
+      totalAttempted: after?.totalAttempted || 0,
+    };
+  }
+
+  res.json({ success: true, data: responseData });
 });
 
 export const getTestReview = asyncHandler(async (req: LangRequest, res: Response) => {
@@ -272,7 +374,7 @@ export const getTestHistory = asyncHandler(async (req: LangRequest, res: Respons
   
   const limit = parseInt(req.query.limit as string) || 30;
 
-  const tests = await Test.find({ userId, completed: true })
+  const tests = await Test.find({ userId, completed: true, type: { $ne: 'practice' } })
     .sort({ createdAt: -1 })
     .limit(limit)
     .select('testDate score timeTakenSec createdAt');

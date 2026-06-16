@@ -15,9 +15,15 @@ const TestSchema = new mongoose.Schema({
   totalQuestions:  { type: Number, default: 20 },
   timeTakenSec:    { type: Number },
   completed:       { type: Boolean, default: false },
+  // 'daily' = the once-a-day mock test; 'practice' = focused weak-topic drill.
+  type:            { type: String, enum: ['daily', 'practice'], default: 'daily' },
+  // For practice tests: the subject/topic being drilled.
+  subject:         { type: String },
+  topic:           { type: String },
 }, { timestamps: true });
 
-// Unique: one test per user per day
+// Unique: one DAILY test per user per day. Practice tests use a unique
+// testDate token (e.g. 'practice-<ts>') so they never collide here.
 TestSchema.index({ userId: 1, testDate: 1 }, { unique: true });
 
 export const Test = mongoose.model('Test', TestSchema);
