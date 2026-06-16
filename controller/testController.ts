@@ -37,28 +37,31 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   if (!topic) throw new AppError('topic_required', 400);
 
   const PRACTICE_SIZE = 10;
-  // Match on topic + exam type. Subject is intentionally NOT required in the
-  // filter (a slight subject-string mismatch shouldn't yield an empty drill);
-  // it's still saved on the test for labelling.
-  const questions = await Question.aggregate([
-    {
-      $match: {
-        examType: user.examType,
-        isActive: true,
-        topic,
-      },
-    },
-    { $sample: { size: PRACTICE_SIZE } },
-  ]);
+  const base = { examType: user.examType, isActive: true };
+  const sample = (match: any) =>
+    Question.aggregate([
+      { $match: { ...base, ...match } },
+      { $sample: { size: PRACTICE_SIZE } },
+    ]);
+
+  // Prefer the exact topic; fall back to the subject, then to any question of
+  // the user's exam type — so a drill always loads even if tagging is uneven.
+  let questions = await sample({ topic });
+  if (questions.length === 0 && subject) questions = await sample({ subject });
+  if (questions.length === 0) questions = await sample({});
 
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
+
+  // Track improvement against whatever was actually drilled.
+  const drilledSubject = questions[0].subject || subject || 'General';
+  const drilledTopic = questions[0].topic || topic;
 
   let test = await Test.create({
     userId,
     testDate: `practice-${Date.now()}`,
     type: 'practice',
-    subject: subject || questions[0].subject,
-    topic,
+    subject: drilledSubject,
+    topic: drilledTopic,
     questions: questions.map((q: any) => q._id),
     totalQuestions: questions.length,
   });
@@ -90,8 +93,10 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   if (!userId) throw new AppError('unauthorized', 401);
   const today = getTodayIST();
 
-  // Check if test already exists for today
-  let test = await Test.findOne({ userId, testDate: today })
+  // Unlimited tests: resume an in-progress daily test if one exists; otherwise
+  // a fresh one is generated below (a finished test never blocks a new one).
+  let test = await Test.findOne({ userId, type: { $ne: 'practice' }, completed: false })
+    .sort({ createdAt: -1 })
     .populate('questions', '-correctOption -explanation');
 
   // If test exists, filter out any questions that were deleted from DB (populated as null)
@@ -167,9 +172,15 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
       throw new AppError('no_questions_found', 404);
     }
 
+    // One readable date for the first test of the day; extra same-day tests get
+    // a unique suffix to satisfy the unique {userId,testDate} index.
+    const todayTaken = await Test.exists({ userId, testDate: today });
+    const testDate = todayTaken ? `${today}#${Date.now()}` : today;
+
     test = await Test.create({
       userId,
-      testDate: today,
+      testDate,
+      type: 'daily',
       questions: questions.map(q => q._id),
       totalQuestions: questions.length
     });
