@@ -37,13 +37,15 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   if (!topic) throw new AppError('topic_required', 400);
 
   const PRACTICE_SIZE = 10;
+  // Match on topic + exam type. Subject is intentionally NOT required in the
+  // filter (a slight subject-string mismatch shouldn't yield an empty drill);
+  // it's still saved on the test for labelling.
   const questions = await Question.aggregate([
     {
       $match: {
         examType: user.examType,
         isActive: true,
         topic,
-        ...(subject ? { subject } : {}),
       },
     },
     { $sample: { size: PRACTICE_SIZE } },
