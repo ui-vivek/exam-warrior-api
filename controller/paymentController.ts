@@ -24,34 +24,6 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
     throw new AppError('already_active_sub', 400);
   }
 
-  // Also check for any pending payments in the last 5 minutes to prevent double clicks
-  const pendingPayment = await Payment.findOne({
-    userId,
-    status: 'created',
-    createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) }
-  });
-
-  // If a recent order is still pending, resume it (return its checkout link)
-  // instead of blocking — avoids "payment already processing" during retries.
-  if (pendingPayment?.razorpaySubscriptionId) {
-    try {
-      const existing: any = await getRazorpay()
-        .subscriptions.fetch(pendingPayment.razorpaySubscriptionId);
-      if (existing && (existing.status === 'created' || existing.status === 'authenticated')) {
-        return res.json({
-          success: true,
-          data: {
-            subscriptionId: existing.id,
-            razorpayKeyId: process.env.RAZORPAY_KEY_ID,
-            shortUrl: existing.short_url,
-          },
-        });
-      }
-    } catch (_e) {
-      // Couldn't fetch it — fall through and create a fresh order.
-    }
-  }
-
   const { planType } = req.body; // 'monthly' or 'yearly'
 
   if (!planType || !['monthly', 'yearly'].includes(planType)) {
@@ -64,6 +36,41 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
 
   if (!planId) {
     throw new AppError('Plan not configured on server', 500);
+  }
+
+  // Resume a recent pending order ONLY if it is for the SAME plan the user is
+  // requesting now. Switching plans (e.g. monthly -> yearly) must start a fresh
+  // subscription, otherwise the user would be shown the old plan's amount.
+  const pendingPayment = await Payment.findOne({
+    userId,
+    status: 'created',
+    planType,
+    createdAt: { $gte: new Date(Date.now() - 5 * 60 * 1000) },
+  });
+
+  if (pendingPayment?.razorpaySubscriptionId) {
+    try {
+      const existing: any = await getRazorpay()
+        .subscriptions.fetch(pendingPayment.razorpaySubscriptionId);
+      // Double-check the live subscription is for this exact plan and is still
+      // awaiting authorisation before resuming it.
+      if (
+        existing &&
+        existing.plan_id === planId &&
+        (existing.status === 'created' || existing.status === 'authenticated')
+      ) {
+        return res.json({
+          success: true,
+          data: {
+            subscriptionId: existing.id,
+            razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+            shortUrl: existing.short_url,
+          },
+        });
+      }
+    } catch (_e) {
+      // Couldn't fetch it — fall through and create a fresh order.
+    }
   }
 
   const razorpay = getRazorpay();
