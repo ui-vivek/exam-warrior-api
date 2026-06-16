@@ -68,11 +68,14 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
 
   const razorpay = getRazorpay();
 
-  // Create subscription via Razorpay API
+  // Create subscription via Razorpay API.
+  // total_count is the max number of billing cycles Razorpay will auto-charge.
+  // Razorpay requires a finite cap, so we set it high enough to act as
+  // "renew until the user cancels": ~10 years of monthly, 10 years of yearly.
   const subscription = await razorpay.subscriptions.create({
     plan_id: planId,
     customer_notify: 1,
-    total_count: planType === 'monthly' ? 12 : 1,
+    total_count: planType === 'monthly' ? 120 : 10,
   });
 
   // Create Subscription record in MongoDB
@@ -361,18 +364,30 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
       }
     } 
     
-    else if (eventType === 'subscription.cancelled') {
+    // A renewal failed and Razorpay gave up retrying (halted), the user
+    // cancelled, or the subscription ran its full course (completed). In every
+    // case auto-renew has stopped, so the user must lose Premium — otherwise a
+    // failed renewal would leave them on Premium for free.
+    else if (
+      eventType === 'subscription.cancelled' ||
+      eventType === 'subscription.halted' ||
+      eventType === 'subscription.completed'
+    ) {
       const subscriptionId = event.payload?.subscription?.entity?.id;
+      // 'halted' = renewal payments failed; 'cancelled'/'completed' = ended.
+      // Subscription model has a 'halted' status; Payment model does not, so
+      // pending payment rows are simply marked 'cancelled'.
+      const subStatus = eventType === 'subscription.halted' ? 'halted' : 'cancelled';
       if (subscriptionId) {
         await Payment.updateMany(
-          { razorpaySubscriptionId: subscriptionId },
+          { razorpaySubscriptionId: subscriptionId, status: { $ne: 'active' } },
           { status: 'cancelled' },
           { session }
         );
 
         await Subscription.findOneAndUpdate(
           { razorpaySubscriptionId: subscriptionId },
-          { status: 'cancelled', endedAt: new Date() },
+          { status: subStatus, endedAt: new Date() },
           { session }
         );
 
@@ -381,8 +396,8 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
           { subscriptionStatus: 'expired' },
           { session }
         );
-        
-        console.log(`[Webhook] Subscription ${subscriptionId} cancelled.`);
+
+        console.log(`[Webhook] Subscription ${subscriptionId} -> ${eventType} (user downgraded).`);
       }
     }
 
