@@ -21,8 +21,8 @@ const masteryLevel = (acc: number): string => {
 };
 
 /**
- * POST /tests/practice  { subject, topic }
- * Generates a focused 10-question drill for a single (weak) topic.
+ * POST /tests/practice  { subject?: string | string[], topic?, difficulty? }
+ * Generates a focused 10-question drill for a topic and/or one or more subjects.
  * Marked type:'practice' so it never counts as the daily test / streak.
  */
 export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Response) => {
@@ -32,7 +32,12 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   const user = await User.findById(userId);
   if (!user) throw new AppError('user_not_found', 404);
 
-  const subject = String(req.body.subject || '').trim();
+  // `subject` may be a single value or an array (multi-subject drill).
+  const rawSubject = req.body.subject;
+  const subjects: string[] = (Array.isArray(rawSubject) ? rawSubject : [rawSubject])
+    .map((s: any) => String(s || '').trim())
+    .filter((s: string) => s.length > 0);
+  const subjectFilter = subjects.length ? { subject: { $in: subjects } } : null;
   const topic = String(req.body.topic || '').trim();
   // 'all' (or empty) means no difficulty filter.
   const rawDifficulty = String(req.body.difficulty || '').trim().toLowerCase();
@@ -55,13 +60,13 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   // drop it as a last resort so the user still gets a drill.
   let questions: any[] = [];
   if (topic) questions = await sample({ topic });
-  if (questions.length === 0 && subject) questions = await sample({ subject });
+  if (questions.length === 0 && subjectFilter) questions = await sample(subjectFilter);
   if (questions.length === 0) questions = await sample({});
   if (questions.length === 0 && difficulty) {
     // Relax difficulty entirely.
     questions = await Question.aggregate([
       { $match: { examType: user.examType, isActive: true,
-        ...(subject ? { subject } : {}) } },
+        ...(subjectFilter ?? {}) } },
       { $sample: { size: PRACTICE_SIZE } },
     ]);
   }
@@ -69,7 +74,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
 
   // Track improvement against whatever was actually drilled.
-  const drilledSubject = questions[0].subject || subject || 'General';
+  const drilledSubject = questions[0].subject || subjects[0] || 'General';
   const drilledTopic = questions[0].topic || topic;
 
   let test = await Test.create({
