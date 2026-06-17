@@ -386,11 +386,18 @@ export const getTestHistory = asyncHandler(async (req: LangRequest, res: Respons
   if (!userId) throw new AppError('unauthorized', 401);
   
   const limit = parseInt(req.query.limit as string) || 30;
+  const typeParam = String(req.query.type || 'daily').toLowerCase();
 
-  const tests = await Test.find({ userId, completed: true, type: { $ne: 'practice' } })
+  // 'daily' (default) = everything that counts toward ranking; 'practice' =
+  // practice attempts only; 'all' = both.
+  const filter: any = { userId, completed: true };
+  if (typeParam === 'practice') filter.type = 'practice';
+  else if (typeParam !== 'all') filter.type = { $ne: 'practice' };
+
+  const tests = await Test.find(filter)
     .sort({ createdAt: -1 })
     .limit(limit)
-    .select('testDate score timeTakenSec createdAt');
+    .select('testDate score totalQuestions timeTakenSec type createdAt');
 
   res.json({ success: true, data: tests });
 });
