@@ -46,29 +46,27 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
     : null;
 
   const PRACTICE_SIZE = 10;
-  const base: any = { examType: user.examType, isActive: true };
-  if (difficulty) base.difficulty = difficulty;
 
-  const sample = (match: any) =>
+  // Sample ONLY within exactly what the user asked for. A drill must stay
+  // inside the chosen topic / subject(s) — we never borrow questions from
+  // other topics or subjects to pad the count. If a topic is given it takes
+  // priority; otherwise the selected subject(s); otherwise (All subjects) the
+  // whole exam, which is the user's own broad choice.
+  const scope: any = { examType: user.examType, isActive: true };
+  if (topic) scope.topic = topic;
+  else if (subjectFilter) Object.assign(scope, subjectFilter);
+
+  const sampleScope = (extra: any) =>
     Question.aggregate([
-      { $match: { ...base, ...match } },
+      { $match: { ...scope, ...extra } },
       { $sample: { size: PRACTICE_SIZE } },
     ]);
 
-  // Narrow to topic → subject → any (within the chosen difficulty), so a drill
-  // always loads even if tagging is uneven. If nothing matches the difficulty,
-  // drop it as a last resort so the user still gets a drill.
-  let questions: any[] = [];
-  if (topic) questions = await sample({ topic });
-  if (questions.length === 0 && subjectFilter) questions = await sample(subjectFilter);
-  if (questions.length === 0) questions = await sample({});
+  // Prefer the chosen difficulty; if that yields nothing, relax the difficulty
+  // but stay strictly within the same topic/subject scope.
+  let questions: any[] = await sampleScope(difficulty ? { difficulty } : {});
   if (questions.length === 0 && difficulty) {
-    // Relax difficulty entirely.
-    questions = await Question.aggregate([
-      { $match: { examType: user.examType, isActive: true,
-        ...(subjectFilter ?? {}) } },
-      { $sample: { size: PRACTICE_SIZE } },
-    ]);
+    questions = await sampleScope({});
   }
 
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
