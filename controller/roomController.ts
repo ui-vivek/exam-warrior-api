@@ -190,17 +190,75 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
   const room = await Room.findOne({ code });
   if (!room) throw new AppError('room_not_found', 404);
 
-  const ranked = [...room.participants]
-    .map((p: any) => ({
-      name: p.name,
-      score: p.score ?? 0,
-      finished: p.score !== null && p.score !== undefined,
-      isMe: p.userId.toString() === userId,
-    }))
-    .sort((a, b) => b.score - a.score);
+  const ranked = rankParticipants(room.participants).map((p: any) => ({
+    name: p.name,
+    score: p.score ?? 0,
+    finished: p.score !== null && p.score !== undefined,
+    isMe: p.userId.toString() === userId,
+  }));
 
   res.json({
     success: true,
     data: { status: room.status, totalQuestions: room.totalQuestions, leaderboard: ranked },
   });
+});
+
+/**
+ * Orders participants for a leaderboard: finished players first (ranked by
+ * highest score, then fastest finish time as a tie-break), with everyone still
+ * solving placed at the bottom. Returns a new array; does not mutate input.
+ */
+const rankParticipants = (participants: any[] = []): any[] =>
+  [...participants].sort((a: any, b: any) => {
+    const aDone = a.score !== null && a.score !== undefined;
+    const bDone = b.score !== null && b.score !== undefined;
+    if (aDone !== bDone) return aDone ? -1 : 1; // finished above unfinished
+    if (!aDone) return 0; // both still solving
+    if (b.score !== a.score) return b.score - a.score; // higher score first
+    const at = a.finishedAt ? new Date(a.finishedAt).getTime() : Infinity;
+    const bt = b.finishedAt ? new Date(b.finishedAt).getTime() : Infinity;
+    return at - bt; // faster finish wins the tie
+  });
+
+/**
+ * GET /rooms — the classrooms the current user has joined (history).
+ * Returns each room with the user's own score & rank, kept entirely separate
+ * from daily tests so it never affects the all-India / state ranking.
+ */
+export const getMyRooms = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const rooms = await Room.find({ 'participants.userId': userId })
+    .sort({ createdAt: -1 })
+    .limit(50)
+    .lean();
+
+  const data = rooms.map((room: any) => {
+    const participants = room.participants || [];
+    const ordered = rankParticipants(participants);
+    const myIndex = ordered.findIndex(
+      (p: any) => p.userId.toString() === userId,
+    );
+    const me = myIndex >= 0 ? ordered[myIndex] : null;
+    const iFinished = me && me.score !== null && me.score !== undefined;
+    const finishedCount = participants.filter(
+      (p: any) => p.score !== null && p.score !== undefined,
+    ).length;
+
+    return {
+      code: room.code,
+      examType: room.examType,
+      status: room.status,
+      totalQuestions: room.totalQuestions,
+      participantCount: participants.length,
+      finishedCount,
+      isHost: room.hostId.toString() === userId,
+      myScore: iFinished ? me.score : null,
+      myRank: iFinished ? myIndex + 1 : null,
+      date: room.startedAt || room.createdAt,
+    };
+  });
+
+  res.json({ success: true, data });
 });

@@ -6,6 +6,7 @@ import {
   getRoomTest,
   submitRoomScore,
   getLeaderboard,
+  getMyRooms,
 } from '@/controller/roomController';
 import { authMiddleware } from '@/middleware/authMiddleware';
 
@@ -13,6 +14,7 @@ const express = require('express') as typeof import('express');
 
 const router = express.Router();
 
+router.get('/', authMiddleware, getMyRooms);
 router.post('/', authMiddleware, createRoom);
 router.post('/:code/join', authMiddleware, joinRoom);
 router.get('/:code', authMiddleware, getRoom);
