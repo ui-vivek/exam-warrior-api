@@ -31,7 +31,12 @@ const QuestionSchema = new mongoose.Schema({
   performance: {
     generationTimeMs: { type: Number },
     verificationTimeMs: { type: Number }
-  }
+  },
+  // "Report wrong question" safeguard. These were being written by the report
+  // endpoint but were absent from the schema, so strict mode silently dropped
+  // them. Declaring them makes the report button actually persist.
+  reportCount:      { type: Number, default: 0 },
+  reportedWrong:    { type: Boolean, default: false }
 }, { timestamps: true });
 
 // Compound Unique Index: Same question allowed in different exams, but not twice in the same context.

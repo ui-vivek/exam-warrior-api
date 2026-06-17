@@ -9,4 +9,9 @@ const OtpStoreSchema = new mongoose.Schema({
   createdAt:  { type: Date, default: Date.now, expires: 3600 }, // auto-delete after 1 hour (to support rate limit)
 });
 
+// Hot auth path: every send/verify looks up by phone (lockout check, hourly
+// rate-limit count, attempt increment). Without this index those are collection
+// scans over the continuously TTL-churned OTP collection.
+OtpStoreSchema.index({ phone: 1, createdAt: -1 });
+
 export const OtpStore = mongoose.model('OtpStore', OtpStoreSchema);

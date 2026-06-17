@@ -237,8 +237,13 @@ export const getPaymentHistory = asyncHandler(async (req: LangRequest, res: Resp
   const userId = req.userId;
   if (!userId) throw new AppError('unauthorized', 401);
 
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+
   const payments = await Payment.find({ userId })
     .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
     .select('planType amount status paidAt createdAt');
 
   res.json({

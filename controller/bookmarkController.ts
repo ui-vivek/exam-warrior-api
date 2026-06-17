@@ -60,8 +60,16 @@ export const listBookmarks = asyncHandler(async (req: LangRequest, res: Response
 
   const lang = req.lang || 'en';
 
+  // Paginate so a user with a large bookmark list can't pull (and populate)
+  // every row in one request. Defaults are generous enough not to affect normal
+  // use; pass ?page / ?limit to page through.
+  const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+  const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+
   const bookmarks = await Bookmark.find({ userId })
     .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
     .populate('questionId')
     .lean();
 

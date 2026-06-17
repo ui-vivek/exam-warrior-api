@@ -361,20 +361,29 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
 
   console.log(`[Test Submission] Final Score Calculated: ${score} / ${totalQuestionsCount}`);
 
-  // Update test with answers and results
-  await Test.findByIdAndUpdate(test._id, {
-    score, 
-    timeTakenSec: Number(timeTakenSec) || 0, 
-    completed: true,
-    answers: answerDocs.map((a: any) => ({
-      questionId: a.questionId,
-      questionVersion: questionMap[a.questionId.toString()]?.version || 1,
-      selectedOption: a.selectedOption,
-      isCorrect: a.isCorrect,
-      timeSpentSec: a.timeSpentSec
-    })),
-    updatedAt: new Date()
-  });
+  // Atomically claim-and-complete: the update only matches while completed is
+  // still false, so two concurrent submits can't both score the test (and
+  // double-count streak/topic stats). If it returns null, another request
+  // already submitted this test.
+  const claimed = await Test.findOneAndUpdate(
+    { _id: test._id, userId, completed: false },
+    {
+      score,
+      timeTakenSec: Number(timeTakenSec) || 0,
+      completed: true,
+      answers: answerDocs.map((a: any) => ({
+        questionId: a.questionId,
+        questionVersion: questionMap[a.questionId.toString()]?.version || 1,
+        selectedOption: a.selectedOption,
+        isCorrect: a.isCorrect,
+        timeSpentSec: a.timeSpentSec
+      })),
+      updatedAt: new Date()
+    },
+    { new: true }
+  );
+
+  if (!claimed) throw new AppError('test_already_submitted', 400);
 
   // For a practice drill, capture the topic's accuracy BEFORE this attempt.
   const isPractice = test.type === 'practice';

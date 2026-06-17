@@ -68,13 +68,21 @@ export const joinRoom = asyncHandler(async (req: LangRequest, res: Response) => 
   if (room.status !== 'lobby') throw new AppError('room_already_started', 400);
 
   const already = room.participants.some((p: any) => p.userId.toString() === userId);
+  let current: any = room;
   if (!already) {
     const user = await User.findById(userId);
-    room.participants.push({ userId, name: user?.name || 'Warrior' } as any);
-    await room.save();
+    // Atomic add: only push while still in the lobby and not already present.
+    // Prevents two simultaneous joins from clobbering each other's write or
+    // adding the same participant twice.
+    const updated = await Room.findOneAndUpdate(
+      { code, status: 'lobby', 'participants.userId': { $ne: new mongoose.Types.ObjectId(userId) } },
+      { $push: { participants: { userId, name: user?.name || 'Warrior' } } },
+      { new: true }
+    );
+    current = updated || (await Room.findOne({ code })) || room;
   }
 
-  res.json({ success: true, data: serializeRoom(room, userId) });
+  res.json({ success: true, data: serializeRoom(current, userId) });
 });
 
 /** GET /rooms/:code — current room state (polled by clients). */
@@ -106,13 +114,23 @@ export const startRoom = asyncHandler(async (req: LangRequest, res: Response) =>
   ]);
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
 
-  room.questionIds = questions.map((q: any) => q._id);
-  room.totalQuestions = questions.length;
-  room.status = 'active';
-  room.startedAt = new Date();
-  await room.save();
+  // Atomic start: only the transition out of 'lobby' by the host succeeds, so a
+  // double-tap / concurrent start can't reshuffle questions or re-start.
+  const updated = await Room.findOneAndUpdate(
+    { code, status: 'lobby', hostId: new mongoose.Types.ObjectId(userId) },
+    {
+      $set: {
+        questionIds: questions.map((q: any) => q._id),
+        totalQuestions: questions.length,
+        status: 'active',
+        startedAt: new Date(),
+      },
+    },
+    { new: true }
+  );
+  if (!updated) throw new AppError('room_already_started', 400);
 
-  res.json({ success: true, data: serializeRoom(room, userId) });
+  res.json({ success: true, data: serializeRoom(updated, userId) });
 });
 
 /** GET /rooms/:code/test — the shared questions (no answers). */
@@ -171,14 +189,29 @@ export const submitRoomScore = asyncHandler(async (req: LangRequest, res: Respon
     if (correct && String(a.selectedOption || '').toLowerCase() === correct) score++;
   }
 
-  participant.score = score;
-  participant.finishedAt = new Date();
+  // Atomically record the score only while this participant's score is still
+  // null, so concurrent submits can't double-write or race each other.
+  const myId = new mongoose.Types.ObjectId(userId);
+  const updated = await Room.findOneAndUpdate(
+    { code, participants: { $elemMatch: { userId: myId, score: null } } },
+    { $set: { 'participants.$[p].score': score, 'participants.$[p].finishedAt': new Date() } },
+    { arrayFilters: [{ 'p.userId': myId, 'p.score': null }], new: true }
+  );
 
-  const allFinished = room.participants.every((p: any) => p.score !== null && p.score !== undefined);
-  if (allFinished) room.status = 'finished';
-  await room.save();
+  if (!updated) {
+    // A concurrent submit already scored this participant — return that score.
+    const fresh = await Room.findOne({ code });
+    const mine = fresh?.participants.find((p: any) => p.userId.toString() === userId);
+    return res.json({ success: true, data: { score: mine?.score ?? score, total: room.totalQuestions } });
+  }
 
-  res.json({ success: true, data: { score, total: room.totalQuestions } });
+  // Flip to 'finished' once everyone has a score (idempotent, guarded update).
+  const allFinished = updated.participants.every((p: any) => p.score !== null && p.score !== undefined);
+  if (allFinished && updated.status !== 'finished') {
+    await Room.updateOne({ code, status: { $ne: 'finished' } }, { $set: { status: 'finished' } });
+  }
+
+  res.json({ success: true, data: { score, total: updated.totalQuestions } });
 });
 
 /** GET /rooms/:code/leaderboard — participants ranked by score. */

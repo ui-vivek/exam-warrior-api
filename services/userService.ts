@@ -1,7 +1,20 @@
 import { User } from '@/model/user.model';
 
-export async function getUsers() {
-  return await User.find();
+/**
+ * Lists users for the internal admin endpoint. Paginated and projected: never
+ * returns auth/payment secrets (refreshToken, Razorpay ids), and caps the page
+ * size so a growing users collection can't be dumped in a single response.
+ */
+export async function getUsers({ limit = 50, skip = 0 }: { limit?: number; skip?: number } = {}) {
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  const safeSkip = Math.max(skip, 0);
+
+  return await User.find()
+    .select('-refreshToken -razorpaySubId -razorpayCustomerId -subscriptionId -rankTrack')
+    .sort({ createdAt: -1 })
+    .skip(safeSkip)
+    .limit(safeLimit)
+    .lean();
 }
 
 export async function updateUserExamType(userId: string, examType: string) {

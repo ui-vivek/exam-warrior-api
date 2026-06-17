@@ -24,5 +24,7 @@ const RoomSchema = new mongoose.Schema({
 
 RoomSchema.index({ code: 1 }, { unique: true });
 RoomSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+// "My rooms" history queries by a participant's userId on the embedded array.
+RoomSchema.index({ 'participants.userId': 1 });
 
 export const Room = mongoose.model('Room', RoomSchema);

@@ -8,7 +8,14 @@ const connectDB = async () => {
       process.exit(1);
     }
 
-    const conn = await mongoose.connect(env.mongoUri);
+    // Bound the connection pool and fail fast on a bad/slow primary instead of
+    // letting requests hang indefinitely under load.
+    const conn = await mongoose.connect(env.mongoUri, {
+      maxPoolSize: Number(process.env.MONGO_MAX_POOL_SIZE) || 20,
+      minPoolSize: 0,
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+    });
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error: any) {
     console.error(`Error: ${error.message}`);

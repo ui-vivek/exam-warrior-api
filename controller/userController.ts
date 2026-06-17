@@ -12,9 +12,15 @@ import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { getTodayIST } from '@/utils/dateHelper';
+import { env } from '@/lib/config';
+import { cacheGet, cacheSet } from '@/utils/cache';
 
 export const listUsers = asyncHandler(async (req: LangRequest, res: Response) => {
-  const users = await getUsers();
+  const limit = parseInt(req.query.limit as string) || 50;
+  const page = Math.max(parseInt(req.query.page as string) || 1, 1);
+  const skip = (page - 1) * limit;
+
+  const users = await getUsers({ limit, skip });
   res.status(200).json({
     success: true,
     message: 'Users fetched successfully',
@@ -48,15 +54,33 @@ export const updateLanguage = asyncHandler(async (req: LangRequest, res: Respons
 
 export const getUserStats = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
   const user = await User.findById(userId);
   if (!user) throw new AppError('user_not_found', 404);
 
-  const tests = await Test.find({ userId, completed: true, type: { $ne: 'practice' } });
+  // Aggregate totals in the DB instead of loading every completed test (with
+  // its full answers array) into memory and reducing in JS.
+  const [agg] = await Test.aggregate([
+    {
+      $match: {
+        userId: new mongoose.Types.ObjectId(userId),
+        completed: true,
+        type: { $ne: 'practice' },
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalTests: { $sum: 1 },
+        totalScore: { $sum: '$score' },
+        bestScore: { $max: '$score' },
+      },
+    },
+  ]);
 
-  const totalTests = tests.length;
-  const totalScore = tests.reduce((acc, curr) => acc + (curr.score || 0), 0);
-  const avgScore = totalTests > 0 ? totalScore / totalTests : 0;
-  const bestScore = totalTests > 0 ? Math.max(...tests.map(t => t.score || 0)) : 0;
+  const totalTests = agg?.totalTests || 0;
+  const avgScore = totalTests > 0 ? (agg.totalScore || 0) / totalTests : 0;
+  const bestScore = agg?.bestScore || 0;
 
   // Calculate trial days (assume 7 days)
   const trialDaysUsed = Math.floor((Date.now() - new Date(user.trialStartDate).getTime()) / (1000 * 60 * 60 * 24));
@@ -193,7 +217,14 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
   // Rank every user by total score, and attach their profile (name, examType,
   // state) in the same aggregation so we can derive BOTH the all-India and the
   // state leaderboard from one sorted list.
-  const ranking = await Test.aggregate([
+  //
+  // This scans/aggregates the entire tests collection, so in production the
+  // result is cached briefly and shared across all viewers (standings barely
+  // change second-to-second). In development the TTL is 0, so it's always fresh.
+  const LEADERBOARD_TTL_MS = env.isProduction ? 60_000 : 0;
+  let ranking = cacheGet<any[]>('global_ranking');
+  if (!ranking) {
+    ranking = await Test.aggregate([
     { $match: { completed: true, type: { $ne: 'practice' } } },
     {
       $group: {
@@ -221,7 +252,9 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
         state: '$user.state',
       },
     },
-  ]);
+    ]);
+    cacheSet('global_ranking', ranking, LEADERBOARD_TTL_MS);
+  }
 
   // Build display rows (top 20) from any pre-sorted slice of the ranking.
   const buildRows = (rows: any[]) =>

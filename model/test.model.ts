@@ -28,4 +28,9 @@ const TestSchema = new mongoose.Schema({
 // testDate token (e.g. 'practice-<ts>') so they never collide here.
 TestSchema.index({ userId: 1, testDate: 1 }, { unique: true });
 
+// History / stats: list a user's tests newest-first without an in-memory sort.
+TestSchema.index({ userId: 1, createdAt: -1 });
+// Leaderboard aggregation matches { completed, type } across all users.
+TestSchema.index({ completed: 1, type: 1 });
+
 export const Test = mongoose.model('Test', TestSchema);

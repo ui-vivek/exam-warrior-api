@@ -7,8 +7,14 @@ dotenv.config({
   quiet: true,
 });
 
+const nodeEnv = process.env.NODE_ENV || 'development';
+
 export const env = {
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
+  // Single source of truth for prod-only behaviour (auth gates, rate limiting,
+  // response caching). In development these stay off so local testing is
+  // unthrottled and open.
+  isProduction: nodeEnv === 'production',
   port: Number(process.env.PORT) || 5050,
   mongoUri: process.env.MONGODB_URI || '',
   jwtSecret: process.env.JWT_SECRET || 'secret',

@@ -23,3 +23,14 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
     return res.status(401).json({ error: true, message: 'Invalid or expired token' });
   }
 };
+
+/**
+ * Enforces authentication ONLY in production. In development the request passes
+ * straight through, so internal/admin endpoints (e.g. listing users, AI
+ * question generation) stay open for Postman/seeding while still being locked
+ * down once NODE_ENV=production.
+ */
+export const authInProduction = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!env.isProduction) return next();
+  return authMiddleware(req, res, next);
+};
