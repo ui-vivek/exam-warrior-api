@@ -242,8 +242,8 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   }
 
   const lang = req.lang || 'en';
-  const testObj = test.toObject();
-  
+  const testObj: any = test.toObject();
+
   if (testObj.questions) {
     testObj.questions = testObj.questions
       .filter((q: any) => q !== null && q !== undefined)
@@ -266,7 +266,52 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
       });
   }
 
+  // Saved progress so the app can resume: selected options + last position.
+  testObj.savedAnswers = (testObj.answers || [])
+    .filter((a: any) => a && a.questionId && a.selectedOption)
+    .map((a: any) => ({
+      questionId: a.questionId.toString(),
+      selectedOption: a.selectedOption,
+    }));
+  testObj.currentIndex = testObj.currentIndex ?? 0;
+  delete testObj.answers; // don't leak the raw answers array
+
   res.json({ success: true, data: testObj });
+});
+
+/**
+ * POST /tests/:id/progress  { answers: [{questionId, selectedOption}], currentIndex }
+ * Autosaves an in-progress attempt so the user can resume exactly where they
+ * left off. Does not grade or complete the test.
+ */
+export const saveTestProgress = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const { id } = req.params;
+  const { answers = [], currentIndex = 0 } = req.body as {
+    answers: { questionId: string; selectedOption: string; timeSpentSec?: number }[];
+    currentIndex: number;
+  };
+
+  const test = await Test.findOne({ _id: id, userId });
+  if (!test) throw new AppError('test_not_found', 404);
+  if (test.completed) {
+    // Already submitted — nothing to save.
+    return res.json({ success: true, data: { saved: false } });
+  }
+
+  test.answers = (answers || [])
+    .filter((a) => a && a.questionId && a.selectedOption)
+    .map((a) => ({
+      questionId: a.questionId as any,
+      selectedOption: a.selectedOption,
+      timeSpentSec: Number(a.timeSpentSec) || 0,
+    })) as any;
+  (test as any).currentIndex = Math.max(0, Number(currentIndex) || 0);
+  await test.save();
+
+  res.json({ success: true, data: { saved: true } });
 });
 
 export const submitTest = asyncHandler(async (req: LangRequest, res: Response) => {

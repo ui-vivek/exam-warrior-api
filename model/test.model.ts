@@ -15,6 +15,8 @@ const TestSchema = new mongoose.Schema({
   totalQuestions:  { type: Number, default: 20 },
   timeTakenSec:    { type: Number },
   completed:       { type: Boolean, default: false },
+  // Last question index the user was on (for resuming an in-progress test).
+  currentIndex:    { type: Number, default: 0 },
   // 'daily' = the once-a-day mock test; 'practice' = focused weak-topic drill.
   type:            { type: String, enum: ['daily', 'practice'], default: 'daily' },
   // For practice tests: the subject/topic being drilled.
