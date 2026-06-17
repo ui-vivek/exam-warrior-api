@@ -11,6 +11,7 @@ import { UpdateProfileInput, UpdateLanguageInput, UpdateExamTypeInput } from '@/
 import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
+import { MASTERY_THRESHOLD } from '@/services/analyticsService';
 import { getTodayIST } from '@/utils/dateHelper';
 import { env } from '@/lib/config';
 import { cacheGet, cacheSet } from '@/utils/cache';
@@ -160,16 +161,43 @@ export const getWeakTopics = asyncHandler(async (req: LangRequest, res: Response
   const userId = req.userId;
   if (!userId) throw new AppError('unauthorized', 401);
   
-  const topics = await UserTopicStat.find({
+  // A topic is "weak" only while its recent proficiency is below the mastery
+  // cut-off. Once practice lifts recentAccuracyPct to/above MASTERY_THRESHOLD it
+  // drops off this list — that's how a weakness gets "fixed". Legacy rows with
+  // no recentAccuracyPct yet are still included so they show until re-practised.
+  const rows = await UserTopicStat.find({
     userId: new mongoose.Types.ObjectId(userId),
-    totalAttempted: { $gte: 5 }  // Minimum 5 attempts to be considered
+    totalAttempted: { $gte: 5 }, // need enough attempts to judge
+    $or: [
+      { recentAccuracyPct: { $lt: MASTERY_THRESHOLD } },
+      { recentAccuracyPct: { $exists: false } },
+    ],
   })
-  .sort({ accuracyPct: 1 })  // ascending = weakest first
-  .limit(5);
+    .sort({ recentAccuracyPct: 1 }) // ascending = weakest first
+    .limit(5)
+    .lean();
+
+  // Surface the recent (improving) accuracy as `accuracyPct` so the app's
+  // progress bar and priority tag reflect current proficiency, not the sticky
+  // lifetime average. Fall back to lifetime for legacy rows.
+  const data = rows.map((t: any) => {
+    const recent = t.recentAccuracyPct ?? t.accuracyPct ?? 0;
+    return {
+      _id: t._id,
+      subject: t.subject,
+      topic: t.topic,
+      totalAttempted: t.totalAttempted,
+      totalCorrect: t.totalCorrect,
+      accuracyPct: recent,
+      recentAccuracyPct: recent,
+      lifetimeAccuracyPct: t.accuracyPct ?? 0,
+      lastAttemptedAt: t.lastAttemptedAt,
+    };
+  });
 
   res.status(200).json({
     success: true,
-    data: topics
+    data,
   });
 });
 

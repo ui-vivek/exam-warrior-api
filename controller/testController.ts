@@ -396,8 +396,12 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
   if (isPractice && test.subject && test.topic) {
     const before = await UserTopicStat
       .findOne({ userId, subject: test.subject, topic: test.topic })
-      .lean();
-    beforeAcc = before ? Math.round((before.accuracyPct || 0) * 10) / 10 : 0;
+      .lean() as any;
+    // Use recent (EMA) accuracy so the reported improvement matches what the
+    // user sees on the weakness fixer; fall back to lifetime for legacy rows.
+    beforeAcc = before
+      ? Math.round(((before.recentAccuracyPct ?? before.accuracyPct ?? 0)) * 10) / 10
+      : 0;
   }
 
   // Update topic stats
@@ -421,7 +425,9 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
     const after = await UserTopicStat
       .findOne({ userId, subject: test.subject, topic: test.topic })
       .lean() as any;
-    const afterAcc = after ? Math.round((after.accuracyPct || 0) * 10) / 10 : 0;
+    const afterAcc = after
+      ? Math.round(((after.recentAccuracyPct ?? after.accuracyPct ?? 0)) * 10) / 10
+      : 0;
     responseData.improvement = {
       subject: test.subject,
       topic: test.topic,

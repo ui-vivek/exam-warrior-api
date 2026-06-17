@@ -4,14 +4,37 @@ import { User } from '@/model/user.model';
 import { getTodayIST, getYesterdayIST } from '@/utils/dateHelper';
 
 /**
- * Updates topic-wise proficiency for a user after a test
- * Uses bulkWrite for high performance
+ * At/above this recent accuracy a topic is treated as "mastered" and drops off
+ * the weakness list. Shared by the weak-topics query and the mastery labels.
+ */
+export const MASTERY_THRESHOLD = 70;
+
+/**
+ * EMA weight for the latest drill when computing recent accuracy. Higher =
+ * recent practice counts more (faster to climb, faster to fall). 0.4 lets a
+ * couple of good drills meaningfully move a long-stuck topic without erasing
+ * history in a single test.
+ */
+export const RECENT_WEIGHT = 0.4;
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
+/**
+ * Updates topic-wise proficiency for a user after a test.
+ *
+ * Tracks two accuracies per topic:
+ *  - accuracyPct: lifetime (totalCorrect / totalAttempted) — stable, honest
+ *    long-run number used for overall stats.
+ *  - recentAccuracyPct: an exponential moving average that weights the latest
+ *    drill (RECENT_WEIGHT) over the running value. This is what the weakness
+ *    fixer ranks and clears by, so practising a topic visibly lifts it and a
+ *    topic genuinely improved stops being flagged.
  */
 export const updateTopicStats = async (userId: string, answerDocs: any[], questionMap: any) => {
   if (!answerDocs || answerDocs.length === 0) return;
 
-  // Group by topic to avoid multiple increments for same topic in one bulkWrite (though MongoDB handles it, grouping is cleaner)
-  const topicGroups: any = {};
+  // Group this test's answers by topic.
+  const topicGroups: Record<string, { subject: string; topic: string; attempted: number; correct: number }> = {};
 
   for (const answer of answerDocs) {
     const q = questionMap[answer.questionId];
@@ -19,12 +42,7 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
 
     const key = `${q.subject}|${q.topic}`;
     if (!topicGroups[key]) {
-      topicGroups[key] = {
-        subject: q.subject,
-        topic: q.topic,
-        attempted: 0,
-        correct: 0
-      };
+      topicGroups[key] = { subject: q.subject, topic: q.topic, attempted: 0, correct: 0 };
     }
 
     topicGroups[key].attempted += 1;
@@ -33,58 +51,57 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
     }
   }
 
-  const ops = Object.values(topicGroups).map((group: any) => ({
-    updateOne: {
-      filter: { userId, subject: group.subject, topic: group.topic },
-      update: {
-        $inc: {
-          totalAttempted: group.attempted,
-          totalCorrect: group.correct
-        },
-        $set: { lastAttemptedAt: new Date() }
-      },
-      upsert: true
-    }
-  }));
+  const groups = Object.values(topicGroups);
+  if (groups.length === 0) return;
 
-  if (ops.length === 0) return;
-
-  // Execute bulk increment
   const userObjectId = new mongoose.Types.ObjectId(userId);
-  
-  await UserTopicStat.bulkWrite(ops.map(op => ({
-    updateOne: {
-      ...op.updateOne,
-      filter: { ...op.updateOne.filter, userId: userObjectId }
-    }
-  })));
 
-  // Recalculate accuracy for the affected topics of this user
-  const subjects = Object.values(topicGroups).map((g: any) => g.subject);
-  const topics = Object.values(topicGroups).map((g: any) => g.topic);
+  // Fetch existing rows so we can compute the EMA from the previous value.
+  const existing = await UserTopicStat.find({
+    userId: userObjectId,
+    $or: groups.map((g) => ({ subject: g.subject, topic: g.topic })),
+  }).lean();
 
-  await UserTopicStat.updateMany(
-    { userId: userObjectId, subject: { $in: subjects }, topic: { $in: topics } },
-    [
-      {
-        $set: {
-          accuracyPct: {
-            $round: [
-              {
-                $cond: [
-                  { $gt: ["$totalAttempted", 0] },
-                  { $multiply: [{ $divide: ["$totalCorrect", "$totalAttempted"] }, 100] },
-                  0
-                ]
-              },
-              1 // Round to 1 decimal place
-            ]
-          }
-        }
-      }
-    ],
-    { updatePipeline: true }
-  );
+  const prevByKey: Record<string, any> = {};
+  for (const row of existing) prevByKey[`${row.subject}|${row.topic}`] = row;
+
+  const ops = groups.map((g) => {
+    const prev = prevByKey[`${g.subject}|${g.topic}`];
+    const prevAttempted = prev?.totalAttempted ?? 0;
+    const prevCorrect = prev?.totalCorrect ?? 0;
+
+    // Lifetime accuracy after this test.
+    const newAttempted = prevAttempted + g.attempted;
+    const newCorrect = prevCorrect + g.correct;
+    const lifetimeAcc = newAttempted > 0 ? round1((newCorrect / newAttempted) * 100) : 0;
+
+    // Recent accuracy: EMA of this drill's accuracy over the previous value.
+    // For a brand-new topic, seed straight from this drill. For a legacy row
+    // that has history but no EMA yet, seed the EMA from its lifetime accuracy
+    // so it doesn't jump to "mastered" on a single lucky drill.
+    const batchAcc = g.attempted > 0 ? (g.correct / g.attempted) * 100 : 0;
+    const prevRecent = prev?.recentAccuracyPct ?? prev?.accuracyPct ?? null;
+    const recentAcc = (prevAttempted === 0 || prevRecent == null)
+      ? round1(batchAcc)
+      : round1(RECENT_WEIGHT * batchAcc + (1 - RECENT_WEIGHT) * prevRecent);
+
+    return {
+      updateOne: {
+        filter: { userId: userObjectId, subject: g.subject, topic: g.topic },
+        update: {
+          $inc: { totalAttempted: g.attempted, totalCorrect: g.correct },
+          $set: {
+            accuracyPct: lifetimeAcc,
+            recentAccuracyPct: recentAcc,
+            lastAttemptedAt: new Date(),
+          },
+        },
+        upsert: true,
+      },
+    };
+  });
+
+  await UserTopicStat.bulkWrite(ops);
 };
 
 /**
