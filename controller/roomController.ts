@@ -8,11 +8,10 @@ import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
-const pickLang = (field: any, lang: string): string => {
-  if (typeof field === 'string') return field;
-  // Fall back across languages so content shows even if one is empty.
-  return field?.[lang] || field?.en || field?.hi || '';
-};
+// Reads the requested language from the nested bilingual question model.
+// en/hi cross-fallback only covers a rare empty side within the same model.
+const pickLang = (field: any, lang: string): string =>
+  field?.[lang] || field?.en || field?.hi || '';
 
 const genCode = (): string =>
   Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
@@ -151,10 +150,10 @@ export const getRoomTest = asyncHandler(async (req: LangRequest, res: Response) 
   const data = questions.map((q: any) => ({
     _id: q._id,
     questionText: pickLang(q.questionText, lang),
-    optionA: q.options?.a ? pickLang(q.options.a, lang) : q.optionA,
-    optionB: q.options?.b ? pickLang(q.options.b, lang) : q.optionB,
-    optionC: q.options?.c ? pickLang(q.options.c, lang) : q.optionC,
-    optionD: q.options?.d ? pickLang(q.options.d, lang) : q.optionD,
+    optionA: pickLang(q.options?.a, lang),
+    optionB: pickLang(q.options?.b, lang),
+    optionC: pickLang(q.options?.c, lang),
+    optionD: pickLang(q.options?.d, lang),
     subject: q.subject,
     topic: q.topic,
   }));

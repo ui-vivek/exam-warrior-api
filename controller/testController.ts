@@ -91,19 +91,19 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
 
   const lang = req.lang || 'en';
   const testObj: any = test.toObject();
-  const getT = (field: any) => {
-    if (typeof field === 'string') return field;
-    return field?.[lang] || field?.en || field?.hi || '';
-  };
+  // Single source of truth: every question is the nested bilingual model.
+  // Pick the requested language; fall back to the other language only if one
+  // side is empty (both `en` and `hi` belong to the SAME model).
+  const getT = (field: any) => field?.[lang] || field?.en || field?.hi || '';
   testObj.questions = (testObj.questions || [])
     .filter((q: any) => q)
     .map((q: any) => ({
       ...q,
       questionText: getT(q.questionText),
-      optionA: q.options?.a ? getT(q.options.a) : q.optionA,
-      optionB: q.options?.b ? getT(q.options.b) : q.optionB,
-      optionC: q.options?.c ? getT(q.options.c) : q.optionC,
-      optionD: q.options?.d ? getT(q.options.d) : q.optionD,
+      optionA: getT(q.options?.a),
+      optionB: getT(q.options?.b),
+      optionC: getT(q.options?.c),
+      optionD: getT(q.options?.d),
     }));
 
   res.json({ success: true, data: testObj });
@@ -253,20 +253,18 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
     testObj.questions = testObj.questions
       .filter((q: any) => q !== null && q !== undefined)
       .map((q: any) => {
-        const getT = (field: any) => {
-          if (typeof field === 'string') return field;
-          // Fall back across languages so content shows even if one is empty.
-          return field?.[lang] || field?.en || field?.hi || '';
-        };
+        // Pick requested language from the nested bilingual model; the
+        // en/hi cross-fallback covers a rare empty side within the same model.
+        const getT = (field: any) => field?.[lang] || field?.en || field?.hi || '';
 
         return {
           ...q,
           questionText: getT(q.questionText),
-          optionA: q.options?.a ? getT(q.options.a) : q.optionA,
-          optionB: q.options?.b ? getT(q.options.b) : q.optionB,
-          optionC: q.options?.c ? getT(q.options.c) : q.optionC,
-          optionD: q.options?.d ? getT(q.options.d) : q.optionD,
-          explanation: q.explanation ? getT(q.explanation) : q.explanationHindi
+          optionA: getT(q.options?.a),
+          optionB: getT(q.options?.b),
+          optionC: getT(q.options?.c),
+          optionD: getT(q.options?.d),
+          explanation: getT(q.explanation)
         };
       });
   }
@@ -472,22 +470,21 @@ export const getTestReview = asyncHandler(async (req: LangRequest, res: Response
   const result = questions.map(q => {
     const lang = req.lang || 'en';
     
-    // Helper to get text from multilingual field or fallback to legacy string
-    const getTxt = (field: any, l: string) => {
-      if (typeof field === 'string') return field;
-      // Fall back across languages so content shows even if one is empty.
-      return field?.[l] || field?.en || field?.hi || '';
-    };
+    // Pick text for the requested language from the nested bilingual model.
+    const getTxt = (field: any, l: string) =>
+      field?.[l] || field?.en || field?.hi || '';
 
     return {
       questionId: q._id,
       questionText: getTxt(q.questionText, lang),
-      optionA: (q.options as any)?.a ? getTxt((q.options as any).a, lang) : (q as any).optionA, 
-      optionB: (q.options as any)?.b ? getTxt((q.options as any).b, lang) : (q as any).optionB, 
-      optionC: (q.options as any)?.c ? getTxt((q.options as any).c, lang) : (q as any).optionC, 
-      optionD: (q.options as any)?.d ? getTxt((q.options as any).d, lang) : (q as any).optionD,
+      optionA: getTxt((q.options as any)?.a, lang),
+      optionB: getTxt((q.options as any)?.b, lang),
+      optionC: getTxt((q.options as any)?.c, lang),
+      optionD: getTxt((q.options as any)?.d, lang),
       correctOption: q.correctOption,
-      explanationHindi: (q as any).explanationHindi || getTxt((q as any).explanation, lang),
+      // Response key kept as `explanationHindi` for the existing Angular review
+      // screen; it now carries the selected-language explanation text.
+      explanationHindi: getTxt((q as any).explanation, lang),
       subject: q.subject, 
       topic: q.topic,
       selectedOption: answerMap[q._id.toString()]?.selectedOption,

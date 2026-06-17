@@ -6,11 +6,10 @@ import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 
-const pickLang = (field: any, lang: string): string => {
-  if (typeof field === 'string') return field;
-  // Fall back across languages so content shows even if one is empty.
-  return field?.[lang] || field?.en || field?.hi || '';
-};
+// Reads the requested language from the nested bilingual question model.
+// en/hi cross-fallback only covers a rare empty side within the same model.
+const pickLang = (field: any, lang: string): string =>
+  field?.[lang] || field?.en || field?.hi || '';
 
 /**
  * POST /questions/:id/bookmark
@@ -82,12 +81,12 @@ export const listBookmarks = asyncHandler(async (req: LangRequest, res: Response
         bookmarkedAt: b.createdAt,
         questionId: q._id,
         questionText: pickLang(q.questionText, lang),
-        optionA: q.options?.a ? pickLang(q.options.a, lang) : q.optionA,
-        optionB: q.options?.b ? pickLang(q.options.b, lang) : q.optionB,
-        optionC: q.options?.c ? pickLang(q.options.c, lang) : q.optionC,
-        optionD: q.options?.d ? pickLang(q.options.d, lang) : q.optionD,
+        optionA: pickLang(q.options?.a, lang),
+        optionB: pickLang(q.options?.b, lang),
+        optionC: pickLang(q.options?.c, lang),
+        optionD: pickLang(q.options?.d, lang),
         correctOption: q.correctOption,
-        explanationHindi: q.explanation ? pickLang(q.explanation, lang) : q.explanationHindi,
+        explanationHindi: pickLang(q.explanation, lang),
         subject: q.subject,
         topic: q.topic,
       };

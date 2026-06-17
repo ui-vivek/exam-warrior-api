@@ -32,6 +32,9 @@ const QuestionSchema = new mongoose.Schema({
     generationTimeMs: { type: Number },
     verificationTimeMs: { type: Number }
   },
+  // Set true once the AI-validation layer confirms the answer is correct.
+  // Written by aiController on save; declared here so strict mode persists it.
+  aiVerified:       { type: Boolean, default: false },
   // "Report wrong question" safeguard. These were being written by the report
   // endpoint but were absent from the schema, so strict mode silently dropped
   // them. Declaring them makes the report button actually persist.

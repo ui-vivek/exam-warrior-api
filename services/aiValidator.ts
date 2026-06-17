@@ -1,13 +1,27 @@
 import { z } from 'zod';
 
+/** A bilingual text field: both English and Hindi required. */
+const Bilingual = z.object({
+  en: z.string().min(1),
+  hi: z.string().min(1),
+});
+
 const QuestionSchema = z.object({
-  questionText: z.string().min(10),
-  optionA: z.string().min(1),
-  optionB: z.string().min(1),
-  optionC: z.string().min(1),
-  optionD: z.string().min(1),
+  questionText: z.object({
+    en: z.string().min(5),
+    hi: z.string().min(1),
+  }),
+  options: z.object({
+    a: Bilingual,
+    b: Bilingual,
+    c: Bilingual,
+    d: Bilingual,
+  }),
   correctOption: z.enum(['a', 'b', 'c', 'd']),
-  explanationHindi: z.string().min(10),
+  explanation: z.object({
+    en: z.string().min(5),
+    hi: z.string().min(5),
+  }),
   subject: z.string(),
   topic: z.string(),
   difficulty: z.enum(['easy', 'medium', 'hard']),

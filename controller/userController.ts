@@ -120,6 +120,7 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
       overallAccuracy: totalTests ? ((avgScore / 20) * 100).toFixed(1) : "0",
       subscriptionStatus: user.subscriptionStatus,
       preferredLanguage: user.preferredLanguage || 'english',
+      appLanguage: user.appLanguage || 'english',
       name: user.name || '',
       phone: user.phone,
       examType: user.examType || 'SSC',
@@ -132,13 +133,14 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
 });
 
 export const updateProfile = asyncHandler(async (req: LangRequest, res: Response) => {
-  const { name, exam_type, preferred_language, state, avatar } = req.body as UpdateProfileInput & { avatar?: string };
-  
+  const { name, exam_type, preferred_language, app_language, state, avatar } = req.body as UpdateProfileInput & { avatar?: string };
+
   const updateData: any = {};
   if (name !== undefined) updateData.name = name;
   if (state !== undefined) updateData.state = state;
   if (exam_type !== undefined) updateData.examType = exam_type;
   if (preferred_language !== undefined) updateData.preferredLanguage = preferred_language;
+  if (app_language !== undefined) updateData.appLanguage = app_language;
   if (avatar !== undefined) updateData.avatar = avatar;
 
   const user = await updateUserProfile(req.userId!, updateData);
@@ -151,6 +153,7 @@ export const updateProfile = asyncHandler(async (req: LangRequest, res: Response
       phone: user.phone,
       examType: user.examType || 'SSC',
       preferredLanguage: user.preferredLanguage || 'english',
+      appLanguage: user.appLanguage || 'english',
       state: user.state || '',
       avatar: user.avatar || 'aspirant'
     }

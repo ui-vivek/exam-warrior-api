@@ -13,7 +13,11 @@ const UserSchema = new mongoose.Schema({
   streakCount:          { type: Number, default: 0 },
   lastActiveDate:       { type: Date },
   refreshToken:         { type: String },
+  // Language the QUESTIONS / options / explanations are served in.
   preferredLanguage:    { type: String, enum: ['english', 'hindi'], default: 'english' },
+  // Language of the APP INTERFACE (labels, buttons). Independent of the above —
+  // e.g. English UI with Hindi questions, or Hindi for both.
+  appLanguage:          { type: String, enum: ['english', 'hindi'], default: 'english' },
   state:                { type: String },
   avatar:               { type: String, default: 'aspirant' },
   // Daily rank snapshot used to show day-over-day rank movement on the

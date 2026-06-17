@@ -71,13 +71,15 @@ export const generateQuestions = async (
 };
 
 export const verifyBatchQuestions = async (questions: any[]): Promise<any[]> => {
+  // Verify factual correctness against the English text (questions are the
+  // nested bilingual model: { en, hi }).
   const simplifiedQuestions = questions.map((q, idx) => ({
     id: idx,
-    q: q.questionText,
-    a: q.optionA,
-    b: q.optionB,
-    c: q.optionC,
-    d: q.optionD,
+    q: q.questionText?.en,
+    a: q.options?.a?.en,
+    b: q.options?.b?.en,
+    c: q.options?.c?.en,
+    d: q.options?.d?.en,
     ans: q.correctOption
   }));
 
@@ -119,20 +121,24 @@ export const verifyBatchQuestions = async (questions: any[]): Promise<any[]> => 
 export const regenerateSingleQuestion = async (topic: string, examType: string): Promise<any> => {
   const prompt = `
     Generate exactly 1 multiple-choice question for the ${examType} exam on the topic: ${topic}.
-    Follow the same JSON format as before:
+    Provide BOTH English ("en") and Hindi ("hi") for every text field. Hindi question
+    and options in Devanagari; explanation.hi in simple conversational Hinglish.
+    The Hindi must mean exactly the same as the English.
+    Output ONLY raw JSON in this exact shape:
     {
-      "questionText": "...",
-      "optionA": "...",
-      "optionB": "...",
-      "optionC": "...",
-      "optionD": "...",
+      "questionText": { "en": "...", "hi": "..." },
+      "options": {
+        "a": { "en": "...", "hi": "..." },
+        "b": { "en": "...", "hi": "..." },
+        "c": { "en": "...", "hi": "..." },
+        "d": { "en": "...", "hi": "..." }
+      },
       "correctOption": "a",
-      "explanationHindi": "...",
+      "explanation": { "en": "...", "hi": "..." },
       "subject": "...",
       "topic": "${topic}",
       "difficulty": "medium"
     }
-    Output ONLY raw JSON.
   `.trim();
 
   const controller = new AbortController();
