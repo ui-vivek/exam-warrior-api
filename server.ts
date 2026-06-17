@@ -9,7 +9,6 @@ import connectDB from '@/lib/db';
 import apiRouter from '@/router';
 import { errorHandler, notFoundHandler } from '@/middleware/errorMiddleware';
 import { languageMiddleware } from '@/middleware/languageMiddleware';
-import { syncPostman } from '@/utils/postmanSync';
 
 // Connect to Database
 connectDB();
@@ -58,11 +57,6 @@ app.get('/', (req: Request, res: Response) => {
 });
 
 app.use('/api/v1', apiRouter);
-
-// Auto-generate Postman Collection on startup
-setTimeout(() => {
-  syncPostman(app);
-}, 1000);
 
 // Error Handling
 app.use(notFoundHandler);

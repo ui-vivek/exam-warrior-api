@@ -34,21 +34,37 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
 
   const subject = String(req.body.subject || '').trim();
   const topic = String(req.body.topic || '').trim();
-  if (!topic) throw new AppError('topic_required', 400);
+  // 'all' (or empty) means no difficulty filter.
+  const rawDifficulty = String(req.body.difficulty || '').trim().toLowerCase();
+  const difficulty = ['easy', 'medium', 'hard'].includes(rawDifficulty)
+    ? rawDifficulty
+    : null;
 
   const PRACTICE_SIZE = 10;
-  const base = { examType: user.examType, isActive: true };
+  const base: any = { examType: user.examType, isActive: true };
+  if (difficulty) base.difficulty = difficulty;
+
   const sample = (match: any) =>
     Question.aggregate([
       { $match: { ...base, ...match } },
       { $sample: { size: PRACTICE_SIZE } },
     ]);
 
-  // Prefer the exact topic; fall back to the subject, then to any question of
-  // the user's exam type — so a drill always loads even if tagging is uneven.
-  let questions = await sample({ topic });
+  // Narrow to topic → subject → any (within the chosen difficulty), so a drill
+  // always loads even if tagging is uneven. If nothing matches the difficulty,
+  // drop it as a last resort so the user still gets a drill.
+  let questions: any[] = [];
+  if (topic) questions = await sample({ topic });
   if (questions.length === 0 && subject) questions = await sample({ subject });
   if (questions.length === 0) questions = await sample({});
+  if (questions.length === 0 && difficulty) {
+    // Relax difficulty entirely.
+    questions = await Question.aggregate([
+      { $match: { examType: user.examType, isActive: true,
+        ...(subject ? { subject } : {}) } },
+      { $sample: { size: PRACTICE_SIZE } },
+    ]);
+  }
 
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
 
@@ -86,6 +102,29 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
     }));
 
   res.json({ success: true, data: testObj });
+});
+
+/**
+ * GET /tests/practice/subjects
+ * Distinct subjects available to drill for the user's exam type — powers the
+ * subject chips on the practice setup screen.
+ */
+export const getPracticeSubjects = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const user = await User.findById(userId).select('examType').lean();
+  if (!user) throw new AppError('user_not_found', 404);
+
+  const subjects: string[] = await Question.distinct('subject', {
+    examType: (user as any).examType,
+    isActive: true,
+  });
+
+  res.json({
+    success: true,
+    data: subjects.filter((s) => s && s.trim()).sort(),
+  });
 });
 
 export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response) => {
