@@ -11,6 +11,7 @@ import { UpdateProfileInput, UpdateLanguageInput, UpdateExamTypeInput } from '@/
 import { User } from '@/model/user.model';
 import { Test } from '@/model/test.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
+import { getTodayIST } from '@/utils/dateHelper';
 
 export const listUsers = asyncHandler(async (req: LangRequest, res: Response) => {
   const users = await getUsers();
@@ -61,6 +62,29 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
   const trialDaysUsed = Math.floor((Date.now() - new Date(user.trialStartDate).getTime()) / (1000 * 60 * 60 * 24));
   const trialDaysRemaining = Math.max(0, 7 - trialDaysUsed);
 
+  // Today's daily-test status for the home card (one test per day):
+  // not_started → can start; in_progress → resume; completed → locked + result.
+  const today = getTodayIST();
+  const todayDaily: any = await Test.findOne({
+    userId,
+    type: { $ne: 'practice' },
+    testDate: today,
+  })
+    .sort({ completed: -1, createdAt: -1 })
+    .select('score totalQuestions completed')
+    .lean();
+
+  const todayTest = {
+    status: !todayDaily
+      ? 'not_started'
+      : todayDaily.completed
+        ? 'completed'
+        : 'in_progress',
+    testId: todayDaily?._id?.toString() ?? null,
+    score: todayDaily?.completed ? (todayDaily.score ?? 0) : null,
+    total: todayDaily?.totalQuestions ?? 20,
+  };
+
   res.status(200).json({
     success: true,
     data: {
@@ -76,7 +100,8 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
       examType: user.examType || 'SSC',
       state: user.state || '',
       avatar: user.avatar || 'aspirant',
-      trialDaysRemaining
+      trialDaysRemaining,
+      todayTest,
     }
   });
 });

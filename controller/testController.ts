@@ -132,11 +132,25 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   if (!userId) throw new AppError('unauthorized', 401);
   const today = getTodayIST();
 
-  // Unlimited tests: resume an in-progress daily test if one exists; otherwise
-  // a fresh one is generated below (a finished test never blocks a new one).
+  // One daily test per day: if today's daily test is already completed, it's
+  // locked until tomorrow (practice mode stays unlimited). Resuming an
+  // in-progress attempt is still allowed.
+  const completedToday = await Test.exists({
+    userId,
+    type: { $ne: 'practice' },
+    completed: true,
+    testDate: today,
+  });
+
+  // Resume an in-progress daily test if one exists; otherwise generate a fresh
+  // one below — unless today's test is already done (locked).
   let test = await Test.findOne({ userId, type: { $ne: 'practice' }, completed: false })
     .sort({ createdAt: -1 })
     .populate('questions', '-correctOption -explanation');
+
+  if (!test && completedToday) {
+    throw new AppError('daily_already_completed', 409);
+  }
 
   // If test exists, filter out any questions that were deleted from DB (populated as null)
   if (test && test.questions) {
