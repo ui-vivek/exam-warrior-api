@@ -42,8 +42,16 @@ const QuestionSchema = new mongoose.Schema({
   reportedWrong:    { type: Boolean, default: false }
 }, { timestamps: true });
 
-// Compound Unique Index: Same question allowed in different exams, but not twice in the same context.
-QuestionSchema.index({ questionText: 1, examType: 1, topic: 1 }, { unique: true });
+// Compound Unique Index: Same question allowed in different exams, but not twice
+// in the same context. Index the ENGLISH stem (`questionText.en`) — a scalar
+// string — rather than the whole `{ en, hi }` object. Indexing the embedded
+// object put BOTH languages (incl. multi-byte Devanagari) into one key, which
+// risked exceeding MongoDB's ~1024-byte index-key limit and rejecting inserts,
+// and made uniqueness depend on the full object instead of the question text.
+// NOTE: the old `{ questionText: 1, examType: 1, topic: 1 }` index must be
+// dropped once in each environment (autoIndex creates new indexes but never
+// drops old ones) — see scripts/dropLegacyQuestionIndex.ts.
+QuestionSchema.index({ 'questionText.en': 1, examType: 1, topic: 1 }, { unique: true });
 
 // Questions — fast lookup by exam type + topic
 QuestionSchema.index({ examType: 1, topic: 1, isActive: 1 });
