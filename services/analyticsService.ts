@@ -17,8 +17,6 @@ export const MASTERY_THRESHOLD = 70;
  */
 export const RECENT_WEIGHT = 0.4;
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
-
 /**
  * Updates topic-wise proficiency for a user after a test.
  *
@@ -56,46 +54,75 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
 
   const userObjectId = new mongoose.Types.ObjectId(userId);
 
-  // Fetch existing rows so we can compute the EMA from the previous value.
-  const existing = await UserTopicStat.find({
-    userId: userObjectId,
-    $or: groups.map((g) => ({ subject: g.subject, topic: g.topic })),
-  }).lean();
-
-  const prevByKey: Record<string, any> = {};
-  for (const row of existing) prevByKey[`${row.subject}|${row.topic}`] = row;
-
+  // Each topic is updated with a SINGLE atomic aggregation-pipeline update — no
+  // read-modify-write. The EMA is computed inside the database from the row's
+  // own current values, so two concurrent tests touching the same topic can't
+  // read the same `prevRecent` and clobber each other (the previous version
+  // fetched the rows first, which lost updates under concurrency). Semantics are
+  // identical to the old JS math: lifetime = newCorrect/newAttempted; recent =
+  // seed from this drill for a brand-new/legacy-no-EMA row, otherwise EMA.
   const ops = groups.map((g) => {
-    const prev = prevByKey[`${g.subject}|${g.topic}`];
-    const prevAttempted = prev?.totalAttempted ?? 0;
-    const prevCorrect = prev?.totalCorrect ?? 0;
-
-    // Lifetime accuracy after this test.
-    const newAttempted = prevAttempted + g.attempted;
-    const newCorrect = prevCorrect + g.correct;
-    const lifetimeAcc = newAttempted > 0 ? round1((newCorrect / newAttempted) * 100) : 0;
-
-    // Recent accuracy: EMA of this drill's accuracy over the previous value.
-    // For a brand-new topic, seed straight from this drill. For a legacy row
-    // that has history but no EMA yet, seed the EMA from its lifetime accuracy
-    // so it doesn't jump to "mastered" on a single lucky drill.
+    // This drill's own accuracy — a constant for this op.
     const batchAcc = g.attempted > 0 ? (g.correct / g.attempted) * 100 : 0;
-    const prevRecent = prev?.recentAccuracyPct ?? prev?.accuracyPct ?? null;
-    const recentAcc = (prevAttempted === 0 || prevRecent == null)
-      ? round1(batchAcc)
-      : round1(RECENT_WEIGHT * batchAcc + (1 - RECENT_WEIGHT) * prevRecent);
 
     return {
       updateOne: {
         filter: { userId: userObjectId, subject: g.subject, topic: g.topic },
-        update: {
-          $inc: { totalAttempted: g.attempted, totalCorrect: g.correct },
-          $set: {
-            accuracyPct: lifetimeAcc,
-            recentAccuracyPct: recentAcc,
-            lastAttemptedAt: new Date(),
+        update: [
+          // Stage 1: snapshot the pre-update values we need for the EMA seed
+          // decision before we mutate the running totals.
+          {
+            $set: {
+              _prevAttempted: { $ifNull: ['$totalAttempted', 0] },
+              _prevRecent: { $ifNull: ['$recentAccuracyPct', { $ifNull: ['$accuracyPct', null] }] },
+            },
           },
-        },
+          // Stage 2: roll the running totals forward.
+          {
+            $set: {
+              totalAttempted: { $add: ['$_prevAttempted', g.attempted] },
+              totalCorrect: { $add: [{ $ifNull: ['$totalCorrect', 0] }, g.correct] },
+              lastAttemptedAt: '$$NOW',
+            },
+          },
+          // Stage 3: derive the two accuracies from the new totals + snapshot.
+          {
+            $set: {
+              accuracyPct: {
+                $round: [
+                  {
+                    $cond: [
+                      { $gt: ['$totalAttempted', 0] },
+                      { $multiply: [{ $divide: ['$totalCorrect', '$totalAttempted'] }, 100] },
+                      0,
+                    ],
+                  },
+                  1,
+                ],
+              },
+              recentAccuracyPct: {
+                $round: [
+                  {
+                    $cond: [
+                      // Brand-new topic, or a legacy row with no EMA history.
+                      { $or: [{ $eq: ['$_prevAttempted', 0] }, { $eq: ['$_prevRecent', null] }] },
+                      batchAcc,
+                      {
+                        $add: [
+                          { $multiply: [RECENT_WEIGHT, batchAcc] },
+                          { $multiply: [1 - RECENT_WEIGHT, '$_prevRecent'] },
+                        ],
+                      },
+                    ],
+                  },
+                  1,
+                ],
+              },
+            },
+          },
+          // Stage 4: drop the scratch fields so they don't persist.
+          { $unset: ['_prevAttempted', '_prevRecent'] },
+        ],
         upsert: true,
       },
     };
