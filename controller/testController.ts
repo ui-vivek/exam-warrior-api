@@ -5,7 +5,7 @@ import { Question } from '@/model/question.model';
 import { Bookmark } from '@/model/bookmark.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
-import { getTodayIST, getTodayStart } from '@/utils/dateHelper';
+import { getTodayIST } from '@/utils/dateHelper';
 import { updateTopicStats, updateStreak } from '@/services/analyticsService';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
@@ -71,9 +71,17 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
 
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
 
-  // Track improvement against whatever was actually drilled.
+  // Track improvement against whatever was actually drilled (from the first
+  // picked question, before shuffling, so single-topic drills stay accurate).
   const drilledSubject = questions[0].subject || subjects[0] || 'General';
   const drilledTopic = questions[0].topic || topic;
+
+  // Shuffle so a multi-subject / "All" drill interleaves subjects rather than
+  // showing them in blocks. (No-op feel for single-topic drills.)
+  for (let i = questions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [questions[i], questions[j]] = [questions[j], questions[i]];
+  }
 
   let test = await Test.create({
     userId,
@@ -182,50 +190,64 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
     .select('topic');
     
     const weakTopicNames = weakTopicsData.map(t => t.topic);
-    let questions: any[] = [];
 
+    // Build a balanced daily MOCK: it should span many subjects (like a real
+    // exam) with only a moderate adaptive boost toward the user's weak topics —
+    // never dominated by a single topic.
+    const DAILY_SIZE = 20;
+    const WEAK_BOOST = 6; // ~30% adaptive; the rest is breadth across subjects
+    const examBase: any = { examType: user.examType, isActive: true };
+    const questions: any[] = [];
+    const pickedIds = () => questions.map((q: any) => q._id);
+
+    // 1. Adaptive slice — a few questions from the user's weak topics (capped
+    //    so they can't take over the whole test).
     if (weakTopicNames.length > 0) {
-      // 1. Prioritize questions from weak topics (max 10)
-      questions = await Question.aggregate([
-        { $match: { examType: user.examType, isActive: true, topic: { $in: weakTopicNames } } },
-        { $sample: { size: 10 } }
+      const weak = await Question.aggregate([
+        { $match: { ...examBase, topic: { $in: weakTopicNames } } },
+        { $sample: { size: WEAK_BOOST } },
       ]);
+      questions.push(...weak);
     }
 
-    // 2. Fill remaining (or all if no weak topics) from today's pool
-    const remainingSize = 20 - questions.length;
-    if (remainingSize > 0) {
-      const todayPool = await Question.aggregate([
-        { 
-          $match: { 
-            examType: user.examType, 
-            isActive: true, 
-            _id: { $nin: questions.map(q => q._id) },
-            generationDate: { $gte: getTodayStart() } 
-          } 
-        },
-        { $sample: { size: remainingSize } }
-      ]);
-      questions.push(...todayPool);
+    // 2. Breadth slice — spread the remainder across the exam's subjects so the
+    //    mock covers multiple areas instead of clustering on one.
+    if (questions.length < DAILY_SIZE) {
+      const subjects: string[] = (await Question.distinct('subject', examBase))
+        .filter((s: string) => s && s.trim());
+      if (subjects.length > 0) {
+        const remaining = DAILY_SIZE - questions.length;
+        const perSubject = Math.max(1, Math.ceil(remaining / subjects.length));
+        for (const subject of subjects) {
+          if (questions.length >= DAILY_SIZE) break;
+          const need = Math.min(perSubject, DAILY_SIZE - questions.length);
+          const part = await Question.aggregate([
+            { $match: { ...examBase, subject, _id: { $nin: pickedIds() } } },
+            { $sample: { size: need } },
+          ]);
+          questions.push(...part);
+        }
+      }
     }
 
-    // 3. Last fallback: if still not 20, pick from any active questions
-    if (questions.length < 20) {
-      const finalFallback = await Question.aggregate([
-        { 
-          $match: { 
-            examType: user.examType, 
-            isActive: true, 
-            _id: { $nin: questions.map(q => q._id) } 
-          } 
-        },
-        { $sample: { size: 20 - questions.length } }
+    // 3. Fallback — top up randomly from anything to reach the target.
+    if (questions.length < DAILY_SIZE) {
+      const fill = await Question.aggregate([
+        { $match: { ...examBase, _id: { $nin: pickedIds() } } },
+        { $sample: { size: DAILY_SIZE - questions.length } },
       ]);
-      questions.push(...finalFallback);
+      questions.push(...fill);
     }
 
     if (questions.length === 0) {
       throw new AppError('no_questions_found', 404);
+    }
+
+    // Shuffle so the weak-topic and per-subject blocks are interleaved — the
+    // test shouldn't open with six of the same topic in a row.
+    for (let i = questions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [questions[i], questions[j]] = [questions[j], questions[i]];
     }
 
     // One readable date for the first test of the day; extra same-day tests get
