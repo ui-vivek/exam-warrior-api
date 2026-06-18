@@ -46,27 +46,34 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
     : null;
 
   const PRACTICE_SIZE = 10;
+  const examBase: any = { examType: user.examType, isActive: true };
 
-  // Sample ONLY within exactly what the user asked for. A drill must stay
-  // inside the chosen topic / subject(s) — we never borrow questions from
-  // other topics or subjects to pad the count. If a topic is given it takes
-  // priority; otherwise the selected subject(s); otherwise (All subjects) the
-  // whole exam, which is the user's own broad choice.
-  const scope: any = { examType: user.examType, isActive: true };
-  if (topic) scope.topic = topic;
-  else if (subjectFilter) Object.assign(scope, subjectFilter);
-
-  const sampleScope = (extra: any) =>
+  const sample = (match: any) =>
     Question.aggregate([
-      { $match: { ...scope, ...extra } },
+      { $match: { ...examBase, ...match } },
       { $sample: { size: PRACTICE_SIZE } },
     ]);
 
-  // Prefer the chosen difficulty; if that yields nothing, relax the difficulty
-  // but stay strictly within the same topic/subject scope.
-  let questions: any[] = await sampleScope(difficulty ? { difficulty } : {});
+  // Sample within exactly what the user asked for: a topic if given, else the
+  // selected subject(s), else (All subjects) the whole exam. We never pad a
+  // drill with unrelated topics.
+  const scope: any = {};
+  if (topic) scope.topic = topic;
+  else if (subjectFilter) Object.assign(scope, subjectFilter);
+
+  // Prefer the chosen difficulty; if that yields nothing, relax difficulty
+  // within the same scope.
+  let questions: any[] = await sample({ ...scope, ...(difficulty ? { difficulty } : {}) });
   if (questions.length === 0 && difficulty) {
-    questions = await sampleScope({});
+    questions = await sample(scope);
+  }
+
+  // A weak-topic / focus drill targets a single topic AND carries its subject.
+  // If that exact topic has no questions of its own yet, fall back to its
+  // subject (still related) so the drill loads something relevant rather than
+  // dead-ending. Subject-only and "All" drills keep their strict scope.
+  if (questions.length === 0 && topic && subjectFilter) {
+    questions = await sample(subjectFilter);
   }
 
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
