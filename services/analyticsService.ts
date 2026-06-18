@@ -28,7 +28,7 @@ export const RECENT_WEIGHT = 0.4;
  *    fixer ranks and clears by, so practising a topic visibly lifts it and a
  *    topic genuinely improved stops being flagged.
  */
-export const updateTopicStats = async (userId: string, answerDocs: any[], questionMap: any) => {
+export const updateTopicStats = async (userId: string, answerDocs: any[], questionMap: any, examType: string = 'SSC') => {
   if (!answerDocs || answerDocs.length === 0) return;
 
   // Group this test's answers by topic.
@@ -61,13 +61,13 @@ export const updateTopicStats = async (userId: string, answerDocs: any[], questi
   // fetched the rows first, which lost updates under concurrency). Semantics are
   // identical to the old JS math: lifetime = newCorrect/newAttempted; recent =
   // seed from this drill for a brand-new/legacy-no-EMA row, otherwise EMA.
-  const ops = groups.map((g) => {
+  const ops: any[] = groups.map((g) => {
     // This drill's own accuracy — a constant for this op.
     const batchAcc = g.attempted > 0 ? (g.correct / g.attempted) * 100 : 0;
 
     return {
       updateOne: {
-        filter: { userId: userObjectId, subject: g.subject, topic: g.topic },
+        filter: { userId: userObjectId, examType, subject: g.subject, topic: g.topic },
         update: [
           // Stage 1: snapshot the pre-update values we need for the EMA seed
           // decision before we mutate the running totals.

@@ -85,6 +85,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
 
   let test = await Test.create({
     userId,
+    examType: user.examType,
     testDate: `practice-${Date.now()}`,
     type: 'practice',
     subject: drilledSubject,
@@ -143,11 +144,17 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
   if (!userId) throw new AppError('unauthorized', 401);
   const today = getTodayIST();
 
+  // Everything is scoped to the user's current exam, so switching exams keeps
+  // each exam's daily test / lock independent.
+  const meDoc = await User.findById(userId).select('examType');
+  const examType = (meDoc as any)?.examType || 'SSC';
+
   // One daily test per day: if today's daily test is already completed, it's
   // locked until tomorrow (practice mode stays unlimited). Resuming an
   // in-progress attempt is still allowed.
   const completedToday = await Test.exists({
     userId,
+    examType,
     type: { $ne: 'practice' },
     completed: true,
     testDate: today,
@@ -155,7 +162,7 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
 
   // Resume an in-progress daily test if one exists; otherwise generate a fresh
   // one below — unless today's test is already done (locked).
-  let test = await Test.findOne({ userId, type: { $ne: 'practice' }, completed: false })
+  let test = await Test.findOne({ userId, examType, type: { $ne: 'practice' }, completed: false })
     .sort({ createdAt: -1 })
     .populate('questions', '-correctOption -explanation');
 
@@ -257,6 +264,7 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
 
     test = await Test.create({
       userId,
+      examType: user.examType,
       testDate,
       type: 'daily',
       questions: questions.map(q => q._id),
@@ -422,8 +430,8 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
       : 0;
   }
 
-  // Update topic stats
-  await updateTopicStats(userId, answerDocs, questionMap);
+  // Update topic stats (scoped to the test's exam)
+  await updateTopicStats(userId, answerDocs, questionMap, (test as any).examType || 'SSC');
 
   // Streak counts only for the daily mock, not practice drills.
   if (!isPractice) {
@@ -523,9 +531,13 @@ export const getTestHistory = asyncHandler(async (req: LangRequest, res: Respons
   const limit = parseInt(req.query.limit as string) || 30;
   const typeParam = String(req.query.type || 'daily').toLowerCase();
 
+  // Scope history to the user's current exam.
+  const histUser = await User.findById(userId).select('examType').lean();
+  const histExamType = (histUser as any)?.examType || 'SSC';
+
   // 'daily' (default) = everything that counts toward ranking; 'practice' =
   // practice attempts only; 'all' = both.
-  const filter: any = { userId, completed: true };
+  const filter: any = { userId, completed: true, examType: histExamType };
   if (typeParam === 'practice') filter.type = 'practice';
   else if (typeParam !== 'all') filter.type = { $ne: 'practice' };
 

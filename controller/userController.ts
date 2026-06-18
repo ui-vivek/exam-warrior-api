@@ -59,14 +59,28 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
   const user = await User.findById(userId);
   if (!user) throw new AppError('user_not_found', 404);
 
+  const examType = user.examType || 'SSC';
+
+  // One-time lazy backfill: stamp legacy rows (created before per-exam scoping)
+  // with the user's exam so existing progress isn't lost. Cheap + idempotent.
+  await Test.updateMany(
+    { userId: new mongoose.Types.ObjectId(userId), examType: { $exists: false } },
+    { $set: { examType } },
+  );
+  await UserTopicStat.updateMany(
+    { userId: new mongoose.Types.ObjectId(userId), examType: { $exists: false } },
+    { $set: { examType } },
+  );
+
   // Aggregate totals in the DB instead of loading every completed test (with
-  // its full answers array) into memory and reducing in JS.
+  // its full answers array) into memory and reducing in JS. Scoped to exam.
   const [agg] = await Test.aggregate([
     {
       $match: {
         userId: new mongoose.Types.ObjectId(userId),
         completed: true,
         type: { $ne: 'practice' },
+        examType,
       },
     },
     {
@@ -92,6 +106,7 @@ export const getUserStats = asyncHandler(async (req: LangRequest, res: Response)
   const today = getTodayIST();
   const todayDaily: any = await Test.findOne({
     userId,
+    examType,
     type: { $ne: 'practice' },
     testDate: today,
   })
@@ -168,8 +183,12 @@ export const getWeakTopics = asyncHandler(async (req: LangRequest, res: Response
   // cut-off. Once practice lifts recentAccuracyPct to/above MASTERY_THRESHOLD it
   // drops off this list — that's how a weakness gets "fixed". Legacy rows with
   // no recentAccuracyPct yet are still included so they show until re-practised.
+  const wtUser = await User.findById(userId).select('examType').lean();
+  const wtExamType = (wtUser as any)?.examType || 'SSC';
+
   const rows = await UserTopicStat.find({
     userId: new mongoose.Types.ObjectId(userId),
+    examType: wtExamType,
     totalAttempted: { $gte: 5 }, // need enough attempts to judge
     $or: [
       { recentAccuracyPct: { $lt: MASTERY_THRESHOLD } },
@@ -206,9 +225,12 @@ export const getWeakTopics = asyncHandler(async (req: LangRequest, res: Response
 
 export const getSubjectStats = asyncHandler(async (req: LangRequest, res: Response) => {
   const userId = req.userId;
-  
+
+  const ssUser = await User.findById(userId).select('examType').lean();
+  const ssExamType = (ssUser as any)?.examType || 'SSC';
+
   const stats = await UserTopicStat.aggregate([
-    { $match: { userId: new mongoose.Types.ObjectId(userId) } },
+    { $match: { userId: new mongoose.Types.ObjectId(userId), examType: ssExamType } },
     {
       $group: {
         _id: '$subject',
@@ -244,6 +266,7 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
   // The requesting user (as a document so we can persist the rank snapshot).
   const me = await User.findById(userId);
   const myState = ((me as any)?.state || '').trim();
+  const myExamType = (me as any)?.examType || 'SSC';
 
   // Rank every user by total score, and attach their profile (name, examType,
   // state) in the same aggregation so we can derive BOTH the all-India and the
@@ -253,10 +276,13 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
   // result is cached briefly and shared across all viewers (standings barely
   // change second-to-second). In development the TTL is 0, so it's always fresh.
   const LEADERBOARD_TTL_MS = env.isProduction ? 60_000 : 0;
-  let ranking = cacheGet<any[]>('global_ranking');
+  // Ranking is per-exam: a user competes only against others targeting the same
+  // exam. The cache key includes the exam so exams don't share standings.
+  const rankCacheKey = `global_ranking_${myExamType}`;
+  let ranking = cacheGet<any[]>(rankCacheKey);
   if (!ranking) {
     ranking = await Test.aggregate([
-    { $match: { completed: true, type: { $ne: 'practice' } } },
+    { $match: { completed: true, type: { $ne: 'practice' }, examType: myExamType } },
     {
       $group: {
         _id: '$userId',
@@ -284,7 +310,7 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
       },
     },
     ]);
-    cacheSet('global_ranking', ranking, LEADERBOARD_TTL_MS);
+    cacheSet(rankCacheKey, ranking, LEADERBOARD_TTL_MS);
   }
 
   // Build display rows (top 20) from any pre-sorted slice of the ranking.
