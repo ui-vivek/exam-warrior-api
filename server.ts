@@ -9,9 +9,13 @@ import connectDB from '@/lib/db';
 import apiRouter from '@/router';
 import { errorHandler, notFoundHandler } from '@/middleware/errorMiddleware';
 import { languageMiddleware } from '@/middleware/languageMiddleware';
+import { startCron } from '@/lib/cron';
 
 // Connect to Database
 connectDB();
+
+// Start scheduled jobs (daily reminder). No-op unless ENABLE_CRON=true.
+startCron();
 
 const app = express();
 const projectRoot = process.cwd();

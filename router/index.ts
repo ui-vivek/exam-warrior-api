@@ -7,6 +7,7 @@ import testRouter from '@/router/testRouter';
 import paymentRouter from '@/router/paymentRouter';
 import roomRouter from '@/router/roomRouter';
 import deviceRouter from '@/router/deviceRouter';
+import notificationRouter from '@/router/notificationRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -21,5 +22,6 @@ router.use('/tests', testRouter);
 router.use('/payments', paymentRouter);
 router.use('/rooms', roomRouter);
 router.use('/devices', deviceRouter);
+router.use('/notifications', notificationRouter);
 
 export default router;

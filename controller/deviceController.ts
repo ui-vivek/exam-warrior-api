@@ -1,8 +1,9 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 import { UserDevice } from '@/model/userDevice.model';
+import { sendPushToUsers, sendDailyReminderToAll } from '@/services/pushService';
 
 /**
  * POST /devices/register  { deviceId, deviceType?, deviceToken?, appVersion? }
@@ -62,4 +63,37 @@ export const unregisterDevice = asyncHandler(async (req: LangRequest, res: Respo
     ...(deviceId ? { deviceId } : { deviceToken }),
   });
   res.json({ success: true, data: { removed: true } });
+});
+
+/**
+ * POST /devices/test-push — sends a test FCM notification to the caller's own
+ * devices. Handy for verifying push works end-to-end on a real phone.
+ */
+export const sendTestPush = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const result = await sendPushToUsers([userId], {
+    title: 'Exam Warrior 🔔',
+    body: 'Test notification — your push setup works!',
+    data: { type: 'test' },
+  });
+
+  res.json({ success: true, data: result });
+});
+
+/**
+ * POST /notifications/cron/daily-reminder — sends the daily test reminder to
+ * every user that has a registered device. Protected by a shared secret so an
+ * external scheduler (cron-job.org / GitHub Actions / UptimeRobot) can call it.
+ * Header: x-cron-secret: <CRON_SECRET>.
+ */
+export const cronDailyReminder = asyncHandler(async (req: Request, res: Response) => {
+  const secret = req.headers['x-cron-secret'];
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    throw new AppError('unauthorized', 401);
+  }
+
+  const result = await sendDailyReminderToAll();
+  res.json({ success: true, data: result });
 });
