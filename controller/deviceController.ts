@@ -4,6 +4,7 @@ import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 import { UserDevice } from '@/model/userDevice.model';
 import { sendPushToUsers, sendDailyReminderToAll } from '@/services/pushService';
+import { getFirebaseAdmin } from '@/lib/firebase';
 
 /**
  * POST /devices/register  { deviceId, deviceType?, deviceToken?, appVersion? }
@@ -73,13 +74,32 @@ export const sendTestPush = asyncHandler(async (req: LangRequest, res: Response)
   const userId = req.userId;
   if (!userId) throw new AppError('unauthorized', 401);
 
+  // Diagnostics: is the server able to talk to FCM, and does this user have a token?
+  const firebaseReady = !!getFirebaseAdmin();
+  const tokensForUser = await UserDevice.countDocuments({
+    userId,
+    deviceToken: { $exists: true, $nin: [null, ''] },
+  });
+
   const result = await sendPushToUsers([userId], {
     title: 'Exam Warrior 🔔',
     body: 'Test notification — your push setup works!',
     data: { type: 'test' },
   });
 
-  res.json({ success: true, data: result });
+  // Plain-English reason so you can diagnose from the API response alone.
+  let hint: string;
+  if (!firebaseReady) {
+    hint = 'Server has NO Firebase service account. Set FIREBASE_SERVICE_ACCOUNT (or FIREBASE_SERVICE_ACCOUNT_PATH) on Render and redeploy.';
+  } else if (tokensForUser === 0) {
+    hint = 'No device token saved for this user. Open the app, allow notifications, and let it register a device.';
+  } else if (result.sent > 0) {
+    hint = 'Sent! Check your phone.';
+  } else {
+    hint = 'FCM rejected the token (stale). Relaunch/reinstall the app to refresh the token, then try again.';
+  }
+
+  res.json({ success: true, data: { firebaseReady, tokensForUser, ...result, hint } });
 });
 
 /**
