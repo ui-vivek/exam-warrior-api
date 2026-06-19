@@ -18,6 +18,10 @@ const RoomSchema = new mongoose.Schema({
   totalQuestions: { type: Number, default: 10 },
   participants: [RoomParticipantSchema],
   startedAt:   { type: Date },
+  // Shared countdown for the whole room: set when the host starts the test.
+  // durationSec = totalQuestions * SECONDS_PER_QUESTION; endsAt = startedAt + duration.
+  durationSec: { type: Number, default: 600 },
+  endsAt:      { type: Date },
   // Auto-expire idle rooms after 6 hours.
   expiresAt:   { type: Date, default: () => new Date(Date.now() + 6 * 60 * 60 * 1000) },
 }, { timestamps: true });
@@ -26,5 +30,7 @@ RoomSchema.index({ code: 1 }, { unique: true });
 RoomSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 // "My rooms" history queries by a participant's userId on the embedded array.
 RoomSchema.index({ 'participants.userId': 1 });
+// Deadline finalizer scans active rooms whose time is up — keep it index-cheap.
+RoomSchema.index({ status: 1, endsAt: 1 });
 
 export const Room = mongoose.model('Room', RoomSchema);

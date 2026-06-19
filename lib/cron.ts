@@ -5,6 +5,7 @@ import {
   sendTrialEndingReminders,
   sendRankMovementNotifications,
 } from '@/services/notificationService';
+import { finalizeExpiredRooms } from '@/services/roomService';
 
 /**
  * In-server scheduled jobs (node-cron). They run inside the web service, so on
@@ -37,6 +38,9 @@ type Job = {
   defaultSchedule: string;
   label: string;
   run: () => Promise<unknown>;
+  // High-frequency jobs: skip the "firing" log and only log "done" when they
+  // actually did something, so the logs don't fill with empty runs.
+  quiet?: boolean;
 };
 
 const JOBS: Job[] = [
@@ -44,6 +48,8 @@ const JOBS: Job[] = [
   { envKey: 'CRON_WEAKTOPIC_TIME', defaultSchedule: '0 17 * * 1,3,5', label: 'weak-topic', run: sendWeakTopicNudges },
   { envKey: 'CRON_TRIAL_TIME', defaultSchedule: '30 10 * * *', label: 'trial-check', run: sendTrialEndingReminders },
   { envKey: 'CRON_RANK_TIME', defaultSchedule: '0 18 * * 0', label: 'rank-movement', run: sendRankMovementNotifications },
+  // Closes rooms whose shared timer ran out (auto-submits no-shows). Runs often.
+  { envKey: 'CRON_ROOM_FINALIZE_TIME', defaultSchedule: '* * * * *', label: 'finalize-rooms', run: finalizeExpiredRooms, quiet: true },
 ];
 
 export const startCron = (): void => {
@@ -64,11 +70,16 @@ export const startCron = (): void => {
     cron.schedule(
       schedule,
       async () => {
-        const startedAt = new Date().toISOString();
-        console.log(`[Cron] ${job.label} firing at ${startedAt}`);
+        if (!job.quiet) {
+          console.log(`[Cron] ${job.label} firing at ${new Date().toISOString()}`);
+        }
         try {
           const result = await job.run();
-          console.log(`[Cron] ${job.label} done:`, JSON.stringify(result));
+          const resultStr = JSON.stringify(result);
+          // Quiet jobs log only when they did real work (any non-zero count).
+          if (!job.quiet || /[1-9]/.test(resultStr || '')) {
+            console.log(`[Cron] ${job.label} done:`, resultStr);
+          }
         } catch (e) {
           console.error(`[Cron] ${job.label} failed:`, (e as Error).message);
         }

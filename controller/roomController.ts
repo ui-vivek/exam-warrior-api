@@ -17,6 +17,16 @@ const pickLang = (field: any, lang: string): string =>
 const genCode = (): string =>
   Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 
+// Each question gets this much time; the whole room shares one countdown.
+// Override with ROOM_SECONDS_PER_QUESTION (e.g. 6) to test the timer quickly.
+const SECONDS_PER_QUESTION = Number(process.env.ROOM_SECONDS_PER_QUESTION) || 60;
+
+/** Seconds left on the room's shared timer (0 once over, null before it starts). */
+const remainingSecOf = (room: any): number | null => {
+  if (!room.endsAt) return null;
+  return Math.max(0, Math.floor((new Date(room.endsAt).getTime() - Date.now()) / 1000));
+};
+
 /** Strips internal fields and never leaks correct answers. */
 const serializeRoom = (room: any, userId: string) => ({
   code: room.code,
@@ -24,6 +34,9 @@ const serializeRoom = (room: any, userId: string) => ({
   examType: room.examType,
   status: room.status,
   totalQuestions: room.totalQuestions,
+  durationSec: room.durationSec,
+  endsAt: room.endsAt,
+  remainingSec: remainingSecOf(room),
   isHost: room.hostId.toString() === userId,
   participants: (room.participants || []).map((p: any) => ({
     name: p.name,
@@ -114,6 +127,11 @@ export const startRoom = asyncHandler(async (req: LangRequest, res: Response) =>
   ]);
   if (questions.length === 0) throw new AppError('no_questions_found', 404);
 
+  // Shared countdown: starts now, lasts totalQuestions * SECONDS_PER_QUESTION.
+  const startedAt = new Date();
+  const durationSec = questions.length * SECONDS_PER_QUESTION;
+  const endsAt = new Date(startedAt.getTime() + durationSec * 1000);
+
   // Atomic start: only the transition out of 'lobby' by the host succeeds, so a
   // double-tap / concurrent start can't reshuffle questions or re-start.
   const updated = await Room.findOneAndUpdate(
@@ -123,7 +141,9 @@ export const startRoom = asyncHandler(async (req: LangRequest, res: Response) =>
         questionIds: questions.map((q: any) => q._id),
         totalQuestions: questions.length,
         status: 'active',
-        startedAt: new Date(),
+        startedAt,
+        durationSec,
+        endsAt,
       },
     },
     { new: true }
@@ -159,7 +179,16 @@ export const getRoomTest = asyncHandler(async (req: LangRequest, res: Response) 
     topic: q.topic,
   }));
 
-  res.json({ success: true, data: { totalQuestions: room.totalQuestions, questions: data } });
+  res.json({
+    success: true,
+    data: {
+      totalQuestions: room.totalQuestions,
+      questions: data,
+      durationSec: room.durationSec,
+      endsAt: room.endsAt,
+      remainingSec: remainingSecOf(room),
+    },
+  });
 });
 
 /** POST /rooms/:code/submit — score the participant's answers server-side. */
