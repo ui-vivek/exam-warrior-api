@@ -1,23 +1,34 @@
+import fs from 'fs';
 import admin from 'firebase-admin';
 
 let initialized = false;
 let cached: typeof admin | null = null;
 
 /**
- * Lazily initialises firebase-admin from the FIREBASE_SERVICE_ACCOUNT env var
- * (the full service-account JSON, stringified). Returns null if not configured
- * so push simply no-ops instead of crashing.
- *
- * On Render: Settings → Environment → add FIREBASE_SERVICE_ACCOUNT with the
- * contents of the service-account key JSON.
+ * Lazily initialises firebase-admin from the service-account key. Two ways to
+ * provide it (in priority order):
+ *   1. FIREBASE_SERVICE_ACCOUNT_PATH — path to the key JSON file (handy locally).
+ *   2. FIREBASE_SERVICE_ACCOUNT — the key JSON content as a string (use on Render).
+ * Returns null if neither is set, so push simply no-ops instead of crashing.
  */
 export const getFirebaseAdmin = (): typeof admin | null => {
   if (initialized) return cached;
   initialized = true;
 
-  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  let raw: string | undefined;
+
+  const path = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  if (path) {
+    try {
+      raw = fs.readFileSync(path, 'utf8');
+    } catch (e) {
+      console.error(`[Push] Could not read FIREBASE_SERVICE_ACCOUNT_PATH (${path}):`, (e as Error).message);
+    }
+  }
+  if (!raw) raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+
   if (!raw) {
-    console.warn('[Push] FIREBASE_SERVICE_ACCOUNT not set — push notifications disabled.');
+    console.warn('[Push] No service account (FIREBASE_SERVICE_ACCOUNT[_PATH]) — push disabled.');
     cached = null;
     return null;
   }
