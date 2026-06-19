@@ -82,9 +82,10 @@ export const sendTestPush = asyncHandler(async (req: LangRequest, res: Response)
   });
 
   const result = await sendPushToUsers([userId], {
-    title: 'Exam Warrior 🔔',
-    body: 'Test notification — your push setup works!',
+    title: 'Exam Warrior',
+    body: 'Notifications are set up correctly.',
     data: { type: 'test' },
+    channelId: 'updates',
   });
 
   // Plain-English reason so you can diagnose from the API response alone.

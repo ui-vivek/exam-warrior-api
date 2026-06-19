@@ -5,6 +5,9 @@ export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, string>;
+  // Android notification channel: 'reminders' (routine nudges the user can mute)
+  // or 'updates' (results, rankings, account). Defaults to 'updates'.
+  channelId?: string;
 }
 
 /**
@@ -35,16 +38,21 @@ export const sendPushToUsers = async (
   let failed = 0;
   const invalid: string[] = [];
 
+  // Route to a named channel and carry it in data too, so the app shows
+  // foreground notifications on the same channel.
+  const channelId = payload.channelId || 'updates';
+  const data = { ...(payload.data || {}), channelId };
+
   // FCM multicast supports up to 500 tokens per call.
   for (let i = 0; i < tokens.length; i += 500) {
     const chunk = tokens.slice(i, i + 500);
     const res = await admin.messaging().sendEachForMulticast({
       tokens: chunk,
       notification: { title: payload.title, body: payload.body },
-      data: payload.data || {},
+      data,
       android: {
         priority: 'high',
-        notification: { channelId: 'daily_reminder' },
+        notification: { channelId },
       },
     });
     sent += res.successCount;
@@ -83,9 +91,10 @@ export const sendDailyReminderToAll = async () => {
   }).distinct('userId');
 
   const result = await sendPushToUsers(userIds.map((id) => id.toString()), {
-    title: 'Your daily test is ready 📚',
-    body: 'Take today’s test and keep your streak alive!',
+    title: 'Today’s test is ready 📘',
+    body: 'Your daily practice set is waiting. Take it now to keep your streak going.',
     data: { type: 'daily_reminder' },
+    channelId: 'reminders',
   });
 
   return { users: userIds.length, ...result };

@@ -60,9 +60,10 @@ export const sendStreakSaverReminders = async () => {
   if (recipients.length === 0) return { users: 0, sent: 0, failed: 0, tokens: 0 };
 
   const result = await sendPushToUsers(recipients, {
-    title: 'Don’t break your streak 🔥',
-    body: 'You haven’t taken today’s test yet. Finish it and keep your streak alive!',
+    title: 'Keep your streak alive 🔥',
+    body: 'You haven’t taken today’s test yet. A few minutes now keeps your streak going.',
     data: { type: 'streak_saver' },
+    channelId: 'reminders',
   });
   return { users: recipients.length, ...result };
 };
@@ -105,9 +106,10 @@ export const sendWeakTopicNudges = async () => {
     if (!isRecentlyActive(r.lastActiveDate)) continue;
     const acc = Math.round(r.acc || 0);
     const res = await sendPushToUsers([r._id.toString()], {
-      title: 'Sharpen your weak spot 🎯',
-      body: `${r.topic} (${r.subject}) is your weakest area — ${acc}% accuracy. Drill 10 questions now?`,
+      title: 'Practice your weak area 🎯',
+      body: `Your accuracy in ${r.topic} is ${acc}%. Try a quick 10-question drill to improve it.`,
       data: { type: 'weak_topic', subject: String(r.subject || ''), topic: String(r.topic || '') },
+      channelId: 'updates',
     });
     users += 1;
     sent += res.sent;
@@ -150,17 +152,19 @@ export const sendTrialEndingReminders = async () => {
 
   if (endingSoon.length) {
     const res = await sendPushToUsers(endingSoon, {
-      title: '2 days left in your free trial ⏳',
-      body: 'Subscribe now to keep daily tests, explanations and your streak going.',
+      title: '2 days left in your trial ⏳',
+      body: 'Subscribe to keep daily tests, detailed solutions, and progress tracking.',
       data: { type: 'subscription' },
+      channelId: 'updates',
     });
     sent += res.sent; failed += res.failed; tokens += res.tokens;
   }
   if (expired.length) {
     const res = await sendPushToUsers(expired, {
       title: 'Your free trial has ended',
-      body: 'Subscribe for just ₹99/month to continue your prep without a break.',
+      body: 'Subscribe from ₹99/month to continue your daily practice without a break.',
       data: { type: 'subscription' },
+      channelId: 'updates',
     });
     sent += res.sent; failed += res.failed; tokens += res.tokens;
   }
@@ -224,13 +228,13 @@ export const sendRankMovementNotifications = async () => {
       if (current < prev) {
         const up = prev - current;
         payload = {
-          title: `You climbed to All-India #${current} 🚀`,
-          body: `Up ${up} place${up === 1 ? '' : 's'} this week. Keep the momentum — take today’s test!`,
+          title: `All-India rank #${current} 🚀`,
+          body: `You climbed ${up} place${up === 1 ? '' : 's'} this week. Take today’s test to keep rising.`,
         };
       } else if (current - prev >= 50) {
         payload = {
-          title: `You slipped to #${current}`,
-          body: 'A quick test today can climb you back up the rankings.',
+          title: `You dropped to rank #${current}`,
+          body: 'Take today’s test to climb back up the rankings.',
         };
       }
       if (!payload) continue;
@@ -238,6 +242,7 @@ export const sendRankMovementNotifications = async () => {
       const res = await sendPushToUsers([u._id.toString()], {
         ...payload,
         data: { type: 'rank_change' },
+        channelId: 'updates',
       });
       sentUsers += 1;
       sent += res.sent;
@@ -259,8 +264,9 @@ export const notifyClassroomResult = async (code: string, userIds: string[]) => 
   if (!userIds.length) return { sent: 0, failed: 0, tokens: 0 };
   return sendPushToUsers(userIds, {
     title: 'Classroom results are ready 🏆',
-    body: `Room ${code} has finished — see where you ranked!`,
+    body: `Room ${code} has finished. Tap to see where you ranked.`,
     data: { type: 'classroom_result', code },
+    channelId: 'updates',
   });
 };
 
@@ -275,13 +281,15 @@ export const notifyPaymentEvent = async (
     kind === 'success'
       ? {
           title: 'Payment successful ✅',
-          body: 'You’re Premium! Enjoy unlimited tests and Hindi explanations.',
+          body: 'Welcome to Premium. You now have unlimited tests and detailed solutions.',
           data: { type: 'subscription' },
+          channelId: 'updates',
         }
       : {
-          title: 'Your subscription ended',
-          body: 'Renew to keep unlimited access and continue your prep.',
+          title: 'Your subscription has ended',
+          body: 'Renew to restore unlimited tests and detailed solutions.',
           data: { type: 'subscription' },
+          channelId: 'updates',
         };
   return sendPushToUsers([userId], payload);
 };
