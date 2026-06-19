@@ -6,6 +6,7 @@ import { User } from '@/model/user.model';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
+import { notifyClassroomResult } from '@/services/notificationService';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
 // Reads the requested language from the nested bilingual question model.
@@ -207,7 +208,21 @@ export const submitRoomScore = asyncHandler(async (req: LangRequest, res: Respon
   // Flip to 'finished' once everyone has a score (idempotent, guarded update).
   const allFinished = updated.participants.every((p: any) => p.score !== null && p.score !== undefined);
   if (allFinished && updated.status !== 'finished') {
-    await Room.updateOne({ code, status: { $ne: 'finished' } }, { $set: { status: 'finished' } });
+    const flip = await Room.updateOne(
+      { code, status: { $ne: 'finished' } },
+      { $set: { status: 'finished' } },
+    );
+    // Only the request that actually performed the flip sends the push, so the
+    // "results ready" notification fires exactly once per room. Notify everyone
+    // except the person who just submitted (they're already on the result).
+    if (flip.modifiedCount === 1) {
+      const recipients = updated.participants
+        .map((p: any) => p.userId.toString())
+        .filter((id: string) => id !== userId);
+      notifyClassroomResult(code, recipients).catch((e) =>
+        console.error('[Room] result push failed:', e.message),
+      );
+    }
   }
 
   res.json({ success: true, data: { score, total: updated.totalQuestions } });
