@@ -6,6 +6,10 @@ node_modules/
 .env.production
 .env.development
 
+# Firebase service-account key (NEVER commit — it can send push & access Firebase)
+*firebase-adminsdk*.json
+firebase-service-account.json
+
 # Build outputs
 dist/
 build/

@@ -10,6 +10,7 @@ import { User } from '@/model/user.model';
 import { Payment } from '@/model/payment.model';
 import { Subscription } from '@/model/subscription.model';
 import { getRazorpay } from '@/utils/razorpay';
+import { notifyPaymentEvent } from '@/services/notificationService';
 /**
  * POST /payments/create-subscription
  * Creates a Razorpay subscription for the authenticated user.
@@ -293,6 +294,11 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
 
     console.log(`[Webhook] Received event: ${eventType}`);
 
+    // Push notification to fire AFTER the DB transaction commits (so we never
+    // tell a user "payment done" if the write rolled back). Set in branches.
+    let notifyUserId: string | null = null;
+    let notifyKind: 'success' | 'ended' | null = null;
+
     // Step 3: Handle events
     if (eventType === 'subscription.charged' || eventType === 'payment.captured') {
       const paymentEntity = event.payload?.payment?.entity;
@@ -370,6 +376,9 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
           subscriptionId: subDoc?._id,
         }, { session });
 
+        notifyUserId = String(paymentRecord.userId);
+        notifyKind = 'success';
+
         console.log(`[Webhook] ✅ Successfully processed ${eventType} for User ${paymentRecord.userId}`);
       } else {
         console.error(`[Webhook] No user/payment record found for subscription: ${razorpaySubscriptionId}`);
@@ -403,17 +412,30 @@ export const razorpayWebhook = asyncHandler(async (req: Request, res: Response) 
           { session }
         );
 
-        await User.findOneAndUpdate(
+        const downgraded = await User.findOneAndUpdate(
           { razorpaySubId: subscriptionId },
           { subscriptionStatus: 'expired' },
           { session }
         );
+        if (downgraded) {
+          notifyUserId = String(downgraded._id);
+          notifyKind = 'ended';
+        }
 
         console.log(`[Webhook] Subscription ${subscriptionId} -> ${eventType} (user downgraded).`);
       }
     }
 
     await session.commitTransaction();
+
+    // Fire-and-forget push AFTER commit — never blocks the webhook response and
+    // can't roll the transaction back if FCM hiccups.
+    if (notifyUserId && notifyKind) {
+      notifyPaymentEvent(notifyUserId, notifyKind).catch((e) =>
+        console.error('[Webhook] payment push failed:', e.message),
+      );
+    }
+
     res.status(200).json({ status: 'ok' });
 
   } catch (error: any) {

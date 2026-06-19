@@ -29,6 +29,10 @@ const UserSchema = new mongoose.Schema({
     stateToday:     { type: Number },   // today's state rank
     statePrev:      { type: Number },   // previous day's state rank (baseline)
   },
+  // Last all-India rank we PUSHED to this user (rank-movement notification).
+  // Separate from rankTrack (which powers the in-app day-over-day display) so
+  // the two cadences don't interfere. Compared on the weekly rank-movement job.
+  lastNotifiedRank:     { type: Number },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
