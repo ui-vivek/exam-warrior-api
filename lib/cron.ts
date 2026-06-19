@@ -1,45 +1,81 @@
 import cron from 'node-cron';
-import { sendDailyReminderToAll } from '@/services/pushService';
+import {
+  sendStreakSaverReminders,
+  sendWeakTopicNudges,
+  sendTrialEndingReminders,
+  sendRankMovementNotifications,
+} from '@/services/notificationService';
 
 /**
- * In-server scheduled jobs (node-cron). Runs inside the web service, so on
- * Render's free plan it only fires while the service is awake — keep it alive
+ * In-server scheduled jobs (node-cron). They run inside the web service, so on
+ * Render's free plan they only fire while the service is awake — keep it alive
  * with an uptime pinger (e.g. UptimeRobot every ~5 min).
  *
- * Env:
- *  - ENABLE_CRON=true        → turn the scheduler on (off by default).
- *  - CRON_DAILY_TIME='0 19 * * *'  → schedule (default 7:00 PM). For a quick
- *    test set it to '*​/2 * * * *' (every 2 min), watch the logs, then revert.
- *  - CRON_TZ='Asia/Kolkata'  → timezone for the schedule.
+ * Master switch:
+ *  - ENABLE_CRON=true → turn the scheduler on (off by default).
+ *
+ * NOTE: the DAILY "today's test is ready" reminder is intentionally NOT here.
+ * It's an on-device (local) notification scheduled by the app at each user's own
+ * chosen time (Profile → Notifications), so it respects the user's preference and
+ * works offline. The server only runs jobs that need server-side data the phone
+ * can't compute. (The /notifications/cron/daily-reminder HTTP endpoint still
+ * exists for a manual all-users broadcast if ever needed.)
+ *
+ * Each job's schedule is env-overridable (standard cron syntax). Times are in
+ * CRON_TZ (default Asia/Kolkata). Defaults suit Indian aspirants' daily rhythm.
+ *  - CRON_STREAK_TIME    '0 20 * * *'      → 8:00 PM  "don't break your streak"
+ *  - CRON_WEAKTOPIC_TIME '0 17 * * 1,3,5'  → 5 PM Mon/Wed/Fri  weak-topic drill
+ *  - CRON_TRIAL_TIME     '30 10 * * *'     → 10:30 AM trial ending / ended
+ *  - CRON_RANK_TIME      '0 18 * * 0'      → 6 PM Sunday  weekly rank movement
+ *
+ * For a quick test set any to '*​/2 * * * *' (every 2 min), watch the logs,
+ * then revert it to the real time.
  */
+
+type Job = {
+  envKey: string;
+  defaultSchedule: string;
+  label: string;
+  run: () => Promise<unknown>;
+};
+
+const JOBS: Job[] = [
+  { envKey: 'CRON_STREAK_TIME', defaultSchedule: '0 20 * * *', label: 'streak-saver', run: sendStreakSaverReminders },
+  { envKey: 'CRON_WEAKTOPIC_TIME', defaultSchedule: '0 17 * * 1,3,5', label: 'weak-topic', run: sendWeakTopicNudges },
+  { envKey: 'CRON_TRIAL_TIME', defaultSchedule: '30 10 * * *', label: 'trial-check', run: sendTrialEndingReminders },
+  { envKey: 'CRON_RANK_TIME', defaultSchedule: '0 18 * * 0', label: 'rank-movement', run: sendRankMovementNotifications },
+];
+
 export const startCron = (): void => {
   if (process.env.ENABLE_CRON !== 'true') {
     console.log('[Cron] Disabled (set ENABLE_CRON=true to enable).');
     return;
   }
 
-  const schedule = process.env.CRON_DAILY_TIME || '0 19 * * *';
   const timezone = process.env.CRON_TZ || 'Asia/Kolkata';
 
-  if (!cron.validate(schedule)) {
-    console.error(`[Cron] Invalid CRON_DAILY_TIME: "${schedule}" — cron not started.`);
-    return;
+  for (const job of JOBS) {
+    const schedule = process.env[job.envKey] || job.defaultSchedule;
+    if (!cron.validate(schedule)) {
+      console.error(`[Cron] Invalid ${job.envKey}: "${schedule}" — ${job.label} not scheduled.`);
+      continue;
+    }
+
+    cron.schedule(
+      schedule,
+      async () => {
+        const startedAt = new Date().toISOString();
+        console.log(`[Cron] ${job.label} firing at ${startedAt}`);
+        try {
+          const result = await job.run();
+          console.log(`[Cron] ${job.label} done:`, JSON.stringify(result));
+        } catch (e) {
+          console.error(`[Cron] ${job.label} failed:`, (e as Error).message);
+        }
+      },
+      { timezone },
+    );
+
+    console.log(`[Cron] Scheduled ${job.label} at "${schedule}" (${timezone}).`);
   }
-
-  cron.schedule(
-    schedule,
-    async () => {
-      const startedAt = new Date().toISOString();
-      console.log(`[Cron] Daily reminder firing at ${startedAt}`);
-      try {
-        const result = await sendDailyReminderToAll();
-        console.log('[Cron] Daily reminder done:', JSON.stringify(result));
-      } catch (e) {
-        console.error('[Cron] Daily reminder failed:', (e as Error).message);
-      }
-    },
-    { timezone },
-  );
-
-  console.log(`[Cron] Scheduled daily reminder at "${schedule}" (${timezone}).`);
 };
