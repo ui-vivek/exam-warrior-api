@@ -2,6 +2,8 @@ import { authMiddleware } from '@/middleware/authMiddleware';
 import {
   createSubscription,
   verifyPayment,
+  validateVpa,
+  initiateUpiAutopay,
   getPaymentStatus,
   getPaymentHistory,
   razorpayWebhook,
@@ -15,6 +17,12 @@ router.post('/create-subscription', authMiddleware, createSubscription);
 
 // Verify payment after Razorpay checkout (frontend fallback)
 router.post('/verify', authMiddleware, verifyPayment);
+
+// Custom Checkout: validate a typed UPI ID (VPA) before charging
+router.post('/validate-vpa', authMiddleware, validateVpa);
+
+// Custom Checkout: initiate UPI Autopay (recurring e-mandate) on a typed VPA
+router.post('/upi/autopay', authMiddleware, initiateUpiAutopay);
 
 // Razorpay webhook — THE trusted source of payment confirmation
 // No authMiddleware — Razorpay calls this directly

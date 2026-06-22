@@ -31,6 +31,22 @@ export const messages: Record<string, Record<string, string>> = {
     en: 'Payment verified and subscription activated successfully.',
     hi: 'भुगतान सत्यापित और सदस्यता सफलतापूर्वक सक्रिय हो गई।'
   },
+  invalid_vpa: {
+    en: 'Please enter a valid UPI ID (e.g. name@bank).',
+    hi: 'कृपया एक मान्य UPI ID दर्ज करें (जैसे name@bank)।'
+  },
+  subscription_not_found: {
+    en: 'Subscription not found. Please start again.',
+    hi: 'सदस्यता नहीं मिली। कृपया फिर से शुरू करें।'
+  },
+  upi_autopay_failed: {
+    en: 'Could not start the UPI Autopay request. Please try another method.',
+    hi: 'UPI ऑटोपे अनुरोध शुरू नहीं हो सका। कृपया कोई अन्य तरीका आज़माएँ।'
+  },
+  upi_mandate_pending: {
+    en: 'Approve the Autopay request in your UPI app to activate Premium.',
+    hi: 'प्रीमियम सक्रिय करने के लिए अपने UPI ऐप में ऑटोपे अनुरोध स्वीकार करें।'
+  },
   phone_required: {
     en: 'Phone number is required.',
     hi: 'फोन नंबर आवश्यक है।'

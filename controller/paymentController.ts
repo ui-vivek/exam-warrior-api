@@ -9,8 +9,26 @@ import { AuthRequest } from '@/middleware/authMiddleware';
 import { User } from '@/model/user.model';
 import { Payment } from '@/model/payment.model';
 import { Subscription } from '@/model/subscription.model';
-import { getRazorpay } from '@/utils/razorpay';
+import {
+  getRazorpay,
+  validateVpa as razorpayValidateVpa,
+  createUpiAutopayCharge,
+  isS2SUnavailable,
+  razorpayErrorInfo,
+} from '@/utils/razorpay';
 import { notifyPaymentEvent } from '@/services/notificationService';
+
+// Basic VPA format check (e.g. "name@bank"). Razorpay does the real validation;
+// this just rejects obviously malformed input before we hit the API.
+const VPA_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+
+// First-cycle charge amount (in paise) used for the UPI Autopay mandate
+// authorization. Mirrors the public pricing: ₹99/mo and ₹799/yr.
+const PLAN_AMOUNT_PAISE: Record<string, number> = {
+  monthly: 9900,
+  yearly: 79900,
+};
+
 /**
  * POST /payments/create-subscription
  * Creates a Razorpay subscription for the authenticated user.
@@ -207,6 +225,116 @@ export const verifyPayment = asyncHandler(async (req: LangRequest, res: Response
       subscriptionEndDate,
     },
   });
+});
+
+/**
+ * POST /payments/validate-vpa
+ * Validates a user-typed UPI ID (VPA) via Razorpay's S2S VPA validation API so
+ * the custom checkout can show "✓ Verified: <name>" before charging.
+ *
+ * Always responds 200 with an `available` flag: when S2S/Custom Checkout is not
+ * enabled on the account (ticket #19494787), `available` is false and the app
+ * falls back to Razorpay's hosted checkout instead of erroring out.
+ */
+export const validateVpa = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const vpa = String(req.body?.vpa ?? '').trim().toLowerCase();
+  if (!VPA_REGEX.test(vpa)) {
+    throw new AppError('invalid_vpa', 400, 'invalid_vpa');
+  }
+
+  try {
+    const result: any = await razorpayValidateVpa(vpa);
+    return res.json({
+      success: true,
+      data: {
+        available: true,
+        valid: !!result?.success,
+        vpa: result?.vpa ?? vpa,
+        customerName: result?.customer_name ?? null,
+      },
+    });
+  } catch (err: any) {
+    const info = razorpayErrorInfo(err);
+    if (isS2SUnavailable(err)) {
+      console.warn('[Payment] VPA validation unavailable (S2S not enabled):', info.description);
+      // Not an error for the user — signal the app to use the hosted fallback.
+      return res.json({ success: true, data: { available: false, valid: false, vpa } });
+    }
+    console.error('[Payment] VPA validation error:', info);
+    // A real validation failure (e.g. malformed/unknown VPA at Razorpay).
+    return res.json({ success: true, data: { available: true, valid: false, vpa } });
+  }
+});
+
+/**
+ * POST /payments/upi/autopay
+ * Initiates a UPI Autopay (recurring e-mandate) authorization against a typed
+ * VPA for an already-created subscription. The user approves the mandate in
+ * their UPI app; the webhook is the trusted source that activates Premium.
+ *
+ * Body: { subscriptionId, vpa }. Responds 200 with an `available` flag so the
+ * app can fall back to hosted checkout when S2S is not enabled.
+ */
+export const initiateUpiAutopay = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const subscriptionId = String(req.body?.subscriptionId ?? '').trim();
+  const vpa = String(req.body?.vpa ?? '').trim().toLowerCase();
+
+  if (!subscriptionId) throw new AppError('subscription_not_found', 400, 'subscription_not_found');
+  if (!VPA_REGEX.test(vpa)) throw new AppError('invalid_vpa', 400, 'invalid_vpa');
+
+  // The subscription must belong to this user (created via create-subscription).
+  const payment = await Payment.findOne({ userId, razorpaySubscriptionId: subscriptionId });
+  if (!payment) throw new AppError('subscription_not_found', 404, 'subscription_not_found');
+
+  const planType = payment.planType || 'monthly';
+  const amount = PLAN_AMOUNT_PAISE[planType] ?? PLAN_AMOUNT_PAISE.monthly;
+
+  const user = await User.findById(userId);
+  const phone = user?.phone ?? '';
+  const email = phone ? `${phone}@examwarrior.app` : 'user@examwarrior.app';
+
+  try {
+    const result: any = await createUpiAutopayCharge({
+      amount,
+      email,
+      contact: phone,
+      subscriptionId,
+      vpa,
+      ip: req.ip,
+      referer: (req.headers['referer'] as string) || 'https://examwarrior.in',
+      userAgent: (req.headers['user-agent'] as string) || 'ExamWarriorApp',
+    });
+
+    // Mark the pending payment as UPI so history/analytics reflect the method.
+    await Payment.updateOne(
+      { _id: payment._id },
+      { method: 'upi', razorpayPaymentId: result?.razorpay_payment_id ?? payment.razorpayPaymentId },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        available: true,
+        status: 'pending', // awaiting mandate approval in the user's UPI app
+        paymentId: result?.razorpay_payment_id ?? null,
+        message: getMessage('upi_mandate_pending', req.lang),
+      },
+    });
+  } catch (err: any) {
+    const info = razorpayErrorInfo(err);
+    if (isS2SUnavailable(err)) {
+      console.warn('[Payment] UPI Autopay unavailable (S2S not enabled):', info.description);
+      return res.json({ success: true, data: { available: false, status: 'unavailable' } });
+    }
+    console.error('[Payment] UPI Autopay error:', info);
+    throw new AppError('upi_autopay_failed', 400, 'upi_autopay_failed');
+  }
 });
 
 /**
