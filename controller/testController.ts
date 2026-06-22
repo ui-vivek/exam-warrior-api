@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { AuthRequest } from '@/middleware/authMiddleware';
 import { Test } from '@/model/test.model';
 import { Question } from '@/model/question.model';
+import { ExamCatalog } from '@/model/examCatalog.model';
 import { Bookmark } from '@/model/bookmark.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
@@ -38,7 +39,15 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
     .map((s: any) => String(s || '').trim())
     .filter((s: string) => s.length > 0);
   const subjectFilter = subjects.length ? { subject: { $in: subjects } } : null;
-  const topic = String(req.body.topic || '').trim();
+  // `topic` is the legacy single value (weak-topic drills); `topics` is the
+  // array picked on the practice screen. Merge both into one list.
+  const rawTopics = req.body.topics;
+  const topicList: string[] = [
+    ...(Array.isArray(rawTopics) ? rawTopics : []),
+    req.body.topic,
+  ]
+    .map((t: any) => String(t || '').trim())
+    .filter((t: string) => t.length > 0);
   // 'all' (or empty) means no difficulty filter.
   const rawDifficulty = String(req.body.difficulty || '').trim().toLowerCase();
   const difficulty = ['easy', 'medium', 'hard'].includes(rawDifficulty)
@@ -58,7 +67,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   // selected subject(s), else (All subjects) the whole exam. We never pad a
   // drill with unrelated topics.
   const scope: any = {};
-  if (topic) scope.topic = topic;
+  if (topicList.length) scope.topic = { $in: topicList };
   else if (subjectFilter) Object.assign(scope, subjectFilter);
 
   // Prefer the chosen difficulty; if that yields nothing, relax difficulty
@@ -72,7 +81,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   // If that exact topic has no questions of its own yet, fall back to its
   // subject (still related) so the drill loads something relevant rather than
   // dead-ending. Subject-only and "All" drills keep their strict scope.
-  if (questions.length === 0 && topic && subjectFilter) {
+  if (questions.length === 0 && topicList.length && subjectFilter) {
     questions = await sample(subjectFilter);
   }
 
@@ -81,7 +90,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
   // Track improvement against whatever was actually drilled (from the first
   // picked question, before shuffling, so single-topic drills stay accurate).
   const drilledSubject = questions[0].subject || subjects[0] || 'General';
-  const drilledTopic = questions[0].topic || topic;
+  const drilledTopic = questions[0].topic || topicList[0] || '';
 
   // Shuffle so a multi-subject / "All" drill interleaves subjects rather than
   // showing them in blocks. (No-op feel for single-topic drills.)
@@ -144,6 +153,72 @@ export const getPracticeSubjects = asyncHandler(async (req: LangRequest, res: Re
     success: true,
     data: subjects.filter((s) => s && s.trim()).sort(),
   });
+});
+
+/** In-syllabus subject names for an exam type (empty if catalog not seeded). */
+async function catalogSubjectsFor(examType: string): Promise<string[]> {
+  const rows = await ExamCatalog.find({ examType: examType as any, isActive: true })
+    .select('subject')
+    .lean();
+  return rows.map((r: any) => r.subject).filter(Boolean);
+}
+
+/**
+ * GET /tests/practice/syllabus
+ * Returns the in-syllabus subjects (in exam order) and, under each, the topics
+ * that actually have questions — so the practice screen only ever shows
+ * subjects/topics that belong to the user's exam AND can produce a drill.
+ */
+export const getPracticeSyllabus = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const user = await User.findById(userId).select('examType').lean();
+  if (!user) throw new AppError('user_not_found', 404);
+  const examType = (user as any).examType;
+
+  // Canonical syllabus for this exam (ordered).
+  const catalog = await ExamCatalog.find({ examType, isActive: true })
+    .sort({ order: 1 })
+    .lean();
+
+  // What actually has questions, grouped by subject -> set of topics. Used to
+  // hide empty chips and to back-fill topics for legacy/untagged data.
+  const avail = await Question.aggregate([
+    { $match: { examType, isActive: true } },
+    { $group: { _id: '$subject', topics: { $addToSet: '$topic' } } },
+  ]);
+  const availMap = new Map<string, Set<string>>(
+    avail.map((a: any) => [
+      a._id,
+      new Set((a.topics || []).filter((t: any) => t && String(t).trim())),
+    ])
+  );
+
+  const data: { subject: string; topics: string[] }[] = [];
+  for (const c of catalog as any[]) {
+    const have = availMap.get(c.subject);
+    if (!have || have.size === 0) continue; // no questions yet — hide the subject
+    // Prefer the canonical topics that exist; if none match (legacy tagging),
+    // fall back to whatever topics the questions actually carry.
+    let topics = (c.topics || []).filter((t: string) => have.has(t));
+    if (topics.length === 0) topics = [...have].sort();
+    data.push({ subject: c.subject, topics });
+  }
+
+  // Fallback: catalog not seeded for this exam — derive subjects from questions.
+  if (data.length === 0) {
+    for (const a of avail as any[]) {
+      if (a._id) {
+        data.push({
+          subject: a._id,
+          topics: (a.topics || []).filter((t: any) => t && String(t).trim()).sort(),
+        });
+      }
+    }
+  }
+
+  res.json({ success: true, data });
 });
 
 export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response) => {
@@ -211,6 +286,11 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
     const DAILY_SIZE = 20;
     const WEAK_BOOST = 6; // ~30% adaptive; the rest is breadth across subjects
     const examBase: any = { examType: user.examType, isActive: true };
+    // Keep the daily mock within the exam's syllabus: only draw from subjects
+    // that belong to this exam type. Guarded so an unseeded catalog doesn't
+    // starve the test (falls back to all subjects for the exam type).
+    const dailySubjects = await catalogSubjectsFor(user.examType);
+    if (dailySubjects.length > 0) examBase.subject = { $in: dailySubjects };
     const questions: any[] = [];
     const pickedIds = () => questions.map((q: any) => q._id);
 
