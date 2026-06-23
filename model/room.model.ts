@@ -12,7 +12,7 @@ const RoomSchema = new mongoose.Schema({
   code:        { type: String, required: true, unique: true, uppercase: true },
   hostId:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   hostName:    { type: String, default: 'Host' },
-  examType:    { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC'], default: 'SSC' },
+  examType:    { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC','AGNIVEER'], default: 'SSC' },
   status:      { type: String, enum: ['lobby','active','finished'], default: 'lobby' },
   questionIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
   totalQuestions: { type: Number, default: 10 },

@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const UserTopicStatSchema = new mongoose.Schema({
   userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   // Scoped per exam: the same topic name in two exams keeps separate stats.
-  examType:        { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC'], default: 'SSC' },
+  examType:        { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC','AGNIVEER'], default: 'SSC' },
   subject:         { type: String, required: true },
   topic:           { type: String, required: true },
   totalAttempted:  { type: Number, default: 0 },

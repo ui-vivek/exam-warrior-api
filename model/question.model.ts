@@ -6,7 +6,7 @@ const MultilingualString = {
 };
 
 const QuestionSchema = new mongoose.Schema({
-  examType:         { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC'], required: true },
+  examType:         { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC','AGNIVEER'], required: true },
   subject:          { type: String, required: true },
   topic:            { type: String, required: true },
   difficulty:       { type: String, enum: ['easy','medium','hard'], default: 'medium' },

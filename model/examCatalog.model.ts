@@ -13,7 +13,7 @@ const ExamCatalogSchema = new mongoose.Schema(
   {
     examType: {
       type: String,
-      enum: ['SSC', 'RAILWAY', 'BANKING', 'UPSC'],
+      enum: ['SSC', 'RAILWAY', 'BANKING', 'UPSC', 'AGNIVEER'],
       required: true,
     },
     subject: { type: String, required: true, trim: true },

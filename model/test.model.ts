@@ -4,7 +4,7 @@ const TestSchema = new mongoose.Schema({
   userId:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   // The exam this test belongs to — all stats/history/ranking are scoped by it,
   // so switching exams keeps each exam's progress separate (and reversible).
-  examType:        { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC'], default: 'SSC' },
+  examType:        { type: String, enum: ['SSC','RAILWAY','BANKING','UPSC','AGNIVEER'], default: 'SSC' },
   testDate:        { type: String, required: true },   // 'YYYY-MM-DD' format (IST)
   questions:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'Question' }],
   answers: [{

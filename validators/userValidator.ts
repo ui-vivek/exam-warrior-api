@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const updateProfileSchema = z.object({
   body: z.object({
     name: z.string().min(1, 'Name cannot be empty').optional(),
-    exam_type: z.enum(['SSC', 'RAILWAY', 'BANKING', 'UPSC'], {
+    exam_type: z.enum(['SSC', 'RAILWAY', 'BANKING', 'UPSC', 'AGNIVEER'], {
       message: 'invalid_exam_type'
     }).optional(),
     preferred_language: z.enum(['english', 'hindi'], {
@@ -27,7 +27,7 @@ export const updateLanguageSchema = z.object({
 
 export const updateExamTypeSchema = z.object({
   body: z.object({
-    examType: z.enum(['SSC', 'RAILWAY', 'BANKING', 'UPSC'], {
+    examType: z.enum(['SSC', 'RAILWAY', 'BANKING', 'UPSC', 'AGNIVEER'], {
       message: 'invalid_exam_type'
     })
   })
