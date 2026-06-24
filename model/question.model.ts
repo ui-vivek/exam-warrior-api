@@ -16,11 +16,15 @@ const EXAM_TYPES = ['SSC', 'RAILWAY', 'BANKING', 'UPSC', 'AGNIVEER'];
 // collapses near-duplicates like "2+2" vs "2 + 2".
 // MUST stay byte-for-byte in sync with scripts/agniveer/importQuestionsAgniveer.js
 // and scripts/migrateAddDedupKey.js.
-export const computeDedupKey = (en?: string, subject?: string, topic?: string): string =>
-  crypto
+export const computeDedupKey = (en?: string, hi?: string, subject?: string, topic?: string): string => {
+  // Prefer the English stem; fall back to Hindi for Hindi-only questions so the
+  // key is never degenerate (empty-English docs would otherwise all collide).
+  const stem = en && String(en).trim() ? en : (hi || '');
+  return crypto
     .createHash('sha1')
-    .update([en, subject, topic].map((s) => String(s || '').toLowerCase().replace(/\s+/g, '')).join('|'))
+    .update([stem, subject, topic].map((s) => String(s || '').toLowerCase().replace(/\s+/g, '')).join('|'))
     .digest('hex');
+};
 
 const QuestionSchema = new mongoose.Schema({
   // A question can belong to MANY exams — e.g. a Profit & Loss question is asked
@@ -37,11 +41,6 @@ const QuestionSchema = new mongoose.Schema({
       message: 'examTypes must list at least one exam',
     },
   },
-  // DEPRECATED single-exam field. Kept (optional) only so a zero-downtime
-  // migration can backfill `examTypes` while older code still reads `examType`.
-  // The pre-validate hook below keeps it mirrored. Safe to remove once
-  // scripts/migrateExamTypesToArray.js has run in every environment.
-  examType:         { type: String, enum: EXAM_TYPES },
   // Content-derived unique key (see computeDedupKey). Auto-set by the
   // pre-validate hook on save()/insertMany(); the import scripts (bulkWrite,
   // which skips hooks) set it explicitly. Unique-indexed below.
@@ -101,20 +100,12 @@ QuestionSchema.index({ dedupKey: 1 }, { unique: true });
 QuestionSchema.index({ examTypes: 1, topic: 1, isActive: 1 });
 QuestionSchema.index({ examTypes: 1, generationDate: 1 });
 
-// Back-compat normaliser: lift a legacy single `examType` into `examTypes`, and
-// keep the legacy mirror in sync so any not-yet-updated reader still works.
-// Runs on save() and insertMany(); bulkWrite upserts bypass document middleware,
-// so the import scripts set `examTypes` directly.
+// Derives the content-hash dedupKey before validation. Runs on save() and
+// insertMany(); bulkWrite upserts bypass document middleware, so the import
+// scripts compute dedupKey themselves.
 (QuestionSchema as any).pre('validate', function (this: any, next: (err?: any) => void) {
   const doc: any = this;
-  if ((!doc.examTypes || doc.examTypes.length === 0) && doc.examType) {
-    doc.examTypes = [doc.examType];
-  }
-  if (Array.isArray(doc.examTypes) && doc.examTypes.length && !doc.examType) {
-    doc.examType = doc.examTypes[0];
-  }
-  // Always (re)derive the dedup key from current content.
-  doc.dedupKey = computeDedupKey(doc.questionText?.en, doc.subject, doc.topic);
+  doc.dedupKey = computeDedupKey(doc.questionText?.en, doc.questionText?.hi, doc.subject, doc.topic);
   next();
 });
 
