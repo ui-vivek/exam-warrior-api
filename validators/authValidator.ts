@@ -16,7 +16,12 @@ export const verifyOtpSchema = z.object({
     otp: z.string({
       message: 'phone_otp_required'
     }).min(4, 'phone_otp_required'),
-    preferred_language: z.enum(['english', 'hindi']).optional()
+    preferred_language: z.enum(['english', 'hindi']).optional(),
+    // Referral code captured from a ?ref= deep link, applied only on first login
+    // (new account). Loose validation — an unknown code is just ignored.
+    referral_code: z.string().trim().max(20).optional(),
+    // Stable per-install id, used as an anti-fraud signal for referral rewards.
+    device_id: z.string().max(128).optional()
   })
 });
 

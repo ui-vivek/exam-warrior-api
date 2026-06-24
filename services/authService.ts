@@ -3,6 +3,7 @@ import { env } from '@/lib/config';
 import { User } from '@/model/user.model';
 import { OtpService } from './otpService';
 import { AppError } from '@/utils/AppError';
+import { generateUniqueReferralCode, applyReferralAtSignup } from './referralService';
 
 export class AuthService {
   static async requestOtp(phone: string) {
@@ -14,7 +15,12 @@ export class AuthService {
     return { message: result.message };
   }
 
-  static async verifyAndLogin(phone: string, otp: string, preferredLanguage?: string) {
+  static async verifyAndLogin(
+    phone: string,
+    otp: string,
+    preferredLanguage?: string,
+    referral?: { referralCode?: string; deviceId?: string; ip?: string },
+  ) {
     let isValid = false;
     try {
       isValid = await OtpService.verifyOtp(phone, otp);
@@ -39,9 +45,20 @@ export class AuthService {
         subscriptionStatus: 'trial',
         trialStartDate: new Date(),
         examType: 'SSC',
-        preferredLanguage: (preferredLanguage === 'hindi' ? 'hindi' : 'english')
+        preferredLanguage: (preferredLanguage === 'hindi' ? 'hindi' : 'english'),
+        // Give every new account its own shareable code up front.
+        referralCode: await generateUniqueReferralCode(),
       });
       isNewUser = true;
+
+      // Link to the referrer (if a valid code was used). Best-effort — never
+      // blocks login. Reward is granted later, on the friend's first test.
+      await applyReferralAtSignup({
+        newUser: user,
+        code: referral?.referralCode,
+        deviceId: referral?.deviceId,
+        ip: referral?.ip,
+      });
     } else if (preferredLanguage === 'english' || preferredLanguage === 'hindi') {
       user.preferredLanguage = preferredLanguage;
     }

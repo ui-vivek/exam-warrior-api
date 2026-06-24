@@ -8,6 +8,7 @@ import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { getTodayIST } from '@/utils/dateHelper';
 import { updateTopicStats, updateStreak } from '@/services/analyticsService';
+import { creditReferralOnFirstTest } from '@/services/referralService';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { getMessage } from '@/utils/messages';
@@ -523,6 +524,13 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
   // Streak counts only for the daily mock, not practice drills.
   if (!isPractice) {
     await updateStreak(userId);
+
+    // Settle any pending referral on the friend's FIRST daily test: credits
+    // free days to both the friend and whoever referred them. Idempotent (a
+    // no-op on every later test) and self-contained — never blocks submission.
+    const refDeviceId = req.header('x-device-id') || undefined;
+    const refIp = req.ip || (req.header('x-forwarded-for') || '').split(',')[0].trim() || undefined;
+    await creditReferralOnFirstTest(userId, { deviceId: refDeviceId, ip: refIp });
   }
 
   const accuracyPct = ((score / totalQuestionsCount) * 100).toFixed(1);
