@@ -122,7 +122,7 @@ export const startRoom = asyncHandler(async (req: LangRequest, res: Response) =>
   if (room.status !== 'lobby') throw new AppError('room_already_started', 400);
 
   const questions = await Question.aggregate([
-    { $match: { examType: room.examType, isActive: true } },
+    { $match: { examTypes: room.examType, isActive: true } },
     { $sample: { size: room.totalQuestions } },
   ]);
   if (questions.length === 0) throw new AppError('no_questions_found', 404);

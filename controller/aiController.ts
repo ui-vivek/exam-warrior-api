@@ -53,7 +53,7 @@ export const generateAndSaveQuestions = async (req: Request, res: Response) => {
     // Prepare questions for MongoDB
     const questionsToSave = validatedQuestions.map((q) => ({
       ...q,
-      examType,
+      examTypes: [examType],
       source: 'AI',
       generationDate: new Date(),
       generationVersion: 'v1.2', // Track prompt version

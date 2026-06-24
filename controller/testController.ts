@@ -55,7 +55,7 @@ export const createPracticeTest = asyncHandler(async (req: LangRequest, res: Res
     : null;
 
   const PRACTICE_SIZE = 10;
-  const examBase: any = { examType: user.examType, isActive: true };
+  const examBase: any = { examTypes: user.examType, isActive: true };
 
   const sample = (match: any) =>
     Question.aggregate([
@@ -145,7 +145,7 @@ export const getPracticeSubjects = asyncHandler(async (req: LangRequest, res: Re
   if (!user) throw new AppError('user_not_found', 404);
 
   const subjects: string[] = await Question.distinct('subject', {
-    examType: (user as any).examType,
+    examTypes: (user as any).examType,
     isActive: true,
   });
 
@@ -185,7 +185,7 @@ export const getPracticeSyllabus = asyncHandler(async (req: LangRequest, res: Re
   // What actually has questions, grouped by subject -> set of topics. Used to
   // hide empty chips and to back-fill topics for legacy/untagged data.
   const avail = await Question.aggregate([
-    { $match: { examType, isActive: true } },
+    { $match: { examTypes: examType, isActive: true } },
     { $group: { _id: '$subject', topics: { $addToSet: '$topic' } } },
   ]);
   const availMap = new Map<string, Set<string>>(
@@ -285,7 +285,7 @@ export const getTodayTest = asyncHandler(async (req: LangRequest, res: Response)
     // never dominated by a single topic.
     const DAILY_SIZE = 20;
     const WEAK_BOOST = 6; // ~30% adaptive; the rest is breadth across subjects
-    const examBase: any = { examType: user.examType, isActive: true };
+    const examBase: any = { examTypes: user.examType, isActive: true };
     // Keep the daily mock within the exam's syllabus: only draw from subjects
     // that belong to this exam type. Guarded so an unseeded catalog doesn't
     // starve the test (falls back to all subjects for the exam type).
