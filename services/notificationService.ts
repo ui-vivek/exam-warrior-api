@@ -10,7 +10,7 @@ import { getTodayIST } from '@/utils/dateHelper';
  * Business-logic notification jobs. Each function decides WHO should receive a
  * push and WHAT it says, then delegates actual FCM delivery to pushService.
  * Every payload carries a `type` so the app can deep-link on tap:
- *   daily_reminder | streak_saver | weak_topic | subscription | rank_change
+ *   daily_reminder | streak_saver | weak_topic | subscription | rank_change | referral
  */
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -170,6 +170,52 @@ export const sendTrialEndingReminders = async () => {
   }
 
   return { endingSoon: endingSoon.length, expired: expired.length, sent, failed, tokens };
+};
+
+/**
+ * Growth nudge: tell free (trial / expired) users they can unlock premium for
+ * free just by referring friends. Language-aware — each user gets the copy in
+ * THEIR app language (Hindi or English). Cadence is controlled by the cron
+ * schedule (weekly), so no per-user windowing is needed here.
+ */
+export const sendReferralNudges = async () => {
+  const ids = await deviceUserIds();
+  if (ids.length === 0) return { hindi: 0, english: 0, sent: 0, failed: 0, tokens: 0 };
+
+  // Only free users — paid users don't need the "earn premium" hook.
+  const users: any[] = await User.find({
+    _id: { $in: ids },
+    subscriptionStatus: { $in: ['trial', 'expired'] },
+  })
+    .select('appLanguage lastActiveDate')
+    .lean();
+
+  const recipients = users.filter((u) => isRecentlyActive(u.lastActiveDate));
+  const hindiIds = recipients.filter((u) => (u.appLanguage || 'english') === 'hindi').map((u) => u._id.toString());
+  const englishIds = recipients.filter((u) => (u.appLanguage || 'english') !== 'hindi').map((u) => u._id.toString());
+
+  let sent = 0, failed = 0, tokens = 0;
+
+  if (hindiIds.length) {
+    const res = await sendPushToUsers(hindiIds, {
+      title: 'Premium chahiye? Bilkul free! 🎁',
+      body: 'Bas ek dost ko refer karo — jab woh pehla test de, dono ko free premium din milenge.',
+      data: { type: 'referral' },
+      channelId: 'updates',
+    });
+    sent += res.sent; failed += res.failed; tokens += res.tokens;
+  }
+  if (englishIds.length) {
+    const res = await sendPushToUsers(englishIds, {
+      title: 'Want premium for free? 🎁',
+      body: 'Refer one friend — when they take their first test, you BOTH get free premium days.',
+      data: { type: 'referral' },
+      channelId: 'updates',
+    });
+    sent += res.sent; failed += res.failed; tokens += res.tokens;
+  }
+
+  return { hindi: hindiIds.length, english: englishIds.length, sent, failed, tokens };
 };
 
 /**

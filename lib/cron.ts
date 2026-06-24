@@ -4,6 +4,7 @@ import {
   sendWeakTopicNudges,
   sendTrialEndingReminders,
   sendRankMovementNotifications,
+  sendReferralNudges,
 } from '@/services/notificationService';
 import { finalizeExpiredRooms } from '@/services/roomService';
 
@@ -28,6 +29,7 @@ import { finalizeExpiredRooms } from '@/services/roomService';
  *  - CRON_WEAKTOPIC_TIME '0 17 * * 1,3,5'  → 5 PM Mon/Wed/Fri  weak-topic drill
  *  - CRON_TRIAL_TIME     '30 10 * * *'     → 10:30 AM trial ending / ended
  *  - CRON_RANK_TIME      '0 18 * * 0'      → 6 PM Sunday  weekly rank movement
+ *  - CRON_REFERRAL_TIME  '0 19 * * 6'      → 7 PM Saturday  refer-for-premium nudge
  *
  * For a quick test set any to '*​/2 * * * *' (every 2 min), watch the logs,
  * then revert it to the real time.
@@ -48,6 +50,8 @@ const JOBS: Job[] = [
   { envKey: 'CRON_WEAKTOPIC_TIME', defaultSchedule: '0 17 * * 1,3,5', label: 'weak-topic', run: sendWeakTopicNudges },
   { envKey: 'CRON_TRIAL_TIME', defaultSchedule: '30 10 * * *', label: 'trial-check', run: sendTrialEndingReminders },
   { envKey: 'CRON_RANK_TIME', defaultSchedule: '0 18 * * 0', label: 'rank-movement', run: sendRankMovementNotifications },
+  // Weekly "earn premium free by referring" nudge to free users (language-aware).
+  { envKey: 'CRON_REFERRAL_TIME', defaultSchedule: '0 19 * * 6', label: 'referral-nudge', run: sendReferralNudges },
   // Closes rooms whose shared timer ran out (auto-submits no-shows). Runs often.
   { envKey: 'CRON_ROOM_FINALIZE_TIME', defaultSchedule: '* * * * *', label: 'finalize-rooms', run: finalizeExpiredRooms, quiet: true },
 ];
