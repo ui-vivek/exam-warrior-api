@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { Room } from '@/model/room.model';
 import { Question } from '@/model/question.model';
 import { User } from '@/model/user.model';
+import { Bookmark } from '@/model/bookmark.model';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
@@ -212,10 +213,20 @@ export const submitRoomScore = asyncHandler(async (req: LangRequest, res: Respon
   const correctMap: Record<string, string> = {};
   questions.forEach((q: any) => { correctMap[q._id.toString()] = String(q.correctOption || '').toLowerCase(); });
 
+  // Score + record each answer (so the user can review their attempt later).
   let score = 0;
+  const attemptAnswers: any[] = [];
   for (const a of answers) {
+    if (!a || !a.questionId) continue;
     const correct = correctMap[String(a.questionId)];
-    if (correct && String(a.selectedOption || '').toLowerCase() === correct) score++;
+    const sel = String(a.selectedOption || '').toLowerCase();
+    const isCorrect = !!correct && sel === correct;
+    if (isCorrect) score++;
+    attemptAnswers.push({
+      questionId: a.questionId,
+      selectedOption: sel || undefined,
+      isCorrect,
+    });
   }
 
   // Atomically record the score only while this participant's score is still
@@ -223,7 +234,13 @@ export const submitRoomScore = asyncHandler(async (req: LangRequest, res: Respon
   const myId = new mongoose.Types.ObjectId(userId);
   const updated = await Room.findOneAndUpdate(
     { code, participants: { $elemMatch: { userId: myId, score: null } } },
-    { $set: { 'participants.$[p].score': score, 'participants.$[p].finishedAt': new Date() } },
+    {
+      $set: {
+        'participants.$[p].score': score,
+        'participants.$[p].answers': attemptAnswers,
+        'participants.$[p].finishedAt': new Date(),
+      },
+    },
     { arrayFilters: [{ 'p.userId': myId, 'p.score': null }], new: true }
   );
 
@@ -335,6 +352,72 @@ export const getMyRooms = asyncHandler(async (req: LangRequest, res: Response) =
       date: room.startedAt || room.createdAt,
     };
   });
+
+  res.json({ success: true, data });
+});
+
+/**
+ * GET /rooms/:code/review — the signed-in user's own attempt for this room:
+ * each question with the correct answer, their selected option, and the
+ * explanation. Same shape as the daily-test review so the app reuses that UI.
+ * Only available once the user has finished (submitted) the room test.
+ */
+export const getRoomReview = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const code = String(req.params.code || '').toUpperCase();
+  const lang = req.lang || 'en';
+  const room = await Room.findOne({ code });
+  if (!room) throw new AppError('room_not_found', 404);
+
+  const participant: any = room.participants.find(
+    (p: any) => p.userId.toString() === userId,
+  );
+  if (!participant) throw new AppError('not_in_room', 403);
+  if (participant.score === null || participant.score === undefined) {
+    throw new AppError('room_not_finished', 409);
+  }
+
+  const questions = await Question.find({ _id: { $in: room.questionIds } }).lean();
+  const qById = new Map(questions.map((q: any) => [q._id.toString(), q]));
+
+  // The participant's answers, keyed by question.
+  const answerMap: Record<string, any> = {};
+  (participant.answers || []).forEach((a: any) => {
+    if (a.questionId) answerMap[a.questionId.toString()] = a;
+  });
+
+  // Which of these questions has the user already bookmarked?
+  const bookmarks = await Bookmark.find({ userId, questionId: { $in: room.questionIds } })
+    .select('questionId')
+    .lean();
+  const bookmarkedSet = new Set(bookmarks.map((b: any) => b.questionId.toString()));
+
+  // Preserve the order the questions were shown in.
+  const data = (room.questionIds || [])
+    .map((qid: any) => {
+      const q = qById.get(qid.toString());
+      if (!q) return null;
+      const mine = answerMap[q._id.toString()];
+      return {
+        questionId: q._id,
+        questionText: pickLang(q.questionText, lang),
+        optionA: pickLang(q.options?.a, lang),
+        optionB: pickLang(q.options?.b, lang),
+        optionC: pickLang(q.options?.c, lang),
+        optionD: pickLang(q.options?.d, lang),
+        correctOption: q.correctOption,
+        // Key kept as `explanationHindi` to match the daily-review payload.
+        explanationHindi: pickLang(q.explanation, lang),
+        subject: q.subject,
+        topic: q.topic,
+        selectedOption: mine?.selectedOption ?? null,
+        isCorrect: mine?.isCorrect ?? false,
+        isBookmarked: bookmarkedSet.has(q._id.toString()),
+      };
+    })
+    .filter(Boolean);
 
   res.json({ success: true, data });
 });

@@ -7,6 +7,7 @@ import {
   submitRoomScore,
   getLeaderboard,
   getMyRooms,
+  getRoomReview,
 } from '@/controller/roomController';
 import { authMiddleware } from '@/middleware/authMiddleware';
 
@@ -22,5 +23,6 @@ router.post('/:code/start', authMiddleware, startRoom);
 router.get('/:code/test', authMiddleware, getRoomTest);
 router.post('/:code/submit', authMiddleware, submitRoomScore);
 router.get('/:code/leaderboard', authMiddleware, getLeaderboard);
+router.get('/:code/review', authMiddleware, getRoomReview);
 
 export default router;

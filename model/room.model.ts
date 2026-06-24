@@ -1,9 +1,17 @@
 import mongoose from 'mongoose';
 
+// One answer the participant gave, kept so they can review their attempt later.
+const RoomAnswerSchema = new mongoose.Schema({
+  questionId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Question' },
+  selectedOption: { type: String },
+  isCorrect:      { type: Boolean },
+}, { _id: false });
+
 const RoomParticipantSchema = new mongoose.Schema({
   userId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   name:       { type: String, default: 'Warrior' },
   score:      { type: Number, default: null },   // null until they finish
+  answers:    [RoomAnswerSchema],                // per-question answers (for review)
   finishedAt: { type: Date },
   joinedAt:   { type: Date, default: Date.now },
 }, { _id: false });
