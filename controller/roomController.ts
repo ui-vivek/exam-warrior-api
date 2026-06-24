@@ -8,6 +8,20 @@ import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 import { notifyClassroomResult } from '@/services/notificationService';
+import { getTodayIST } from '@/utils/dateHelper';
+
+// Daily room-creation (host) limits. Trial counts as paid so new users get the
+// full hosting experience; only an expired subscription drops to the free tier.
+const ROOM_LIMIT_FREE = Number(process.env.ROOM_LIMIT_FREE) || 2;
+const ROOM_LIMIT_PAID = Number(process.env.ROOM_LIMIT_PAID) || 20;
+const isPaidStatus = (status?: string) => status === 'active' || status === 'trial';
+const roomLimitFor = (status?: string) =>
+  isPaidStatus(status) ? ROOM_LIMIT_PAID : ROOM_LIMIT_FREE;
+// Rooms the user has created today (0 once the stored day rolls over).
+const roomsUsedToday = (user: any, todayKey: string): number => {
+  const t = user?.roomCreateTrack;
+  return t && t.dateKey === todayKey ? (t.count || 0) : 0;
+};
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
 // Reads the requested language from the nested bilingual question model.
@@ -55,6 +69,16 @@ export const createRoom = asyncHandler(async (req: LangRequest, res: Response) =
   const user = await User.findById(userId);
   if (!user) throw new AppError('user_not_found', 404);
 
+  // Daily host quota: free 2, paid (active/trial) 20. Counted via a per-user
+  // counter so the 6h room TTL can't be used to bypass the limit.
+  const todayKey = getTodayIST();
+  const limit = roomLimitFor(user.subscriptionStatus);
+  const used = roomsUsedToday(user, todayKey);
+  if (used >= limit) {
+    // The app maps this code to an upgrade prompt.
+    throw new AppError('room_limit_reached', 403);
+  }
+
   let code = genCode();
   for (let i = 0; i < 5 && (await Room.exists({ code })); i++) code = genCode();
 
@@ -68,7 +92,40 @@ export const createRoom = asyncHandler(async (req: LangRequest, res: Response) =
     participants: [{ userId, name: hostName }],
   });
 
+  // Record the creation against today's quota.
+  (user as any).roomCreateTrack = { dateKey: todayKey, count: used + 1 };
+  user.markModified('roomCreateTrack');
+  await user.save();
+
   res.json({ success: true, data: serializeRoom(room, userId) });
+});
+
+/**
+ * GET /rooms/quota — today's room-creation allowance for the current user, so
+ * the classroom screen can show "used / left" and gate free users.
+ */
+export const getRoomQuota = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const user: any = await User.findById(userId)
+    .select('subscriptionStatus roomCreateTrack')
+    .lean();
+  if (!user) throw new AppError('user_not_found', 404);
+
+  const todayKey = getTodayIST();
+  const limit = roomLimitFor(user.subscriptionStatus);
+  const used = roomsUsedToday(user, todayKey);
+
+  res.json({
+    success: true,
+    data: {
+      limit,
+      used,
+      remaining: Math.max(0, limit - used),
+      isPaid: isPaidStatus(user.subscriptionStatus),
+    },
+  });
 });
 
 /** POST /rooms/:code/join — join an existing lobby. */

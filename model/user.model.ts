@@ -33,6 +33,13 @@ const UserSchema = new mongoose.Schema({
   // Separate from rankTrack (which powers the in-app day-over-day display) so
   // the two cadences don't interfere. Compared on the weekly rank-movement job.
   lastNotifiedRank:     { type: Number },
+  // Daily room-creation (host) quota counter. Resets when dateKey rolls over
+  // (IST). A stored counter, not a count of Room docs — robust to the 6h room
+  // TTL deletion that would otherwise let users exceed the daily limit.
+  roomCreateTrack: {
+    dateKey: { type: String },          // 'YYYY-MM-DD' (IST)
+    count:   { type: Number, default: 0 },
+  },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
