@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 
 const MultilingualString = {
   en: { type: String, trim: true },
@@ -6,6 +7,20 @@ const MultilingualString = {
 };
 
 const EXAM_TYPES = ['SSC', 'RAILWAY', 'BANKING', 'UPSC', 'AGNIVEER'];
+
+// Stable, content-derived dedup key: a SHA-1 of the normalised
+// (stem | subject | topic). We index THIS fixed ~40-byte string for uniqueness
+// instead of the raw question text, which (a) keeps the unique index tiny, (b)
+// is immune to MongoDB's 1024-byte index-key limit even for long comprehension
+// questions, and (c) the normalisation (lowercase + whitespace removed) also
+// collapses near-duplicates like "2+2" vs "2 + 2".
+// MUST stay byte-for-byte in sync with scripts/agniveer/importQuestionsAgniveer.js
+// and scripts/migrateAddDedupKey.js.
+export const computeDedupKey = (en?: string, subject?: string, topic?: string): string =>
+  crypto
+    .createHash('sha1')
+    .update([en, subject, topic].map((s) => String(s || '').toLowerCase().replace(/\s+/g, '')).join('|'))
+    .digest('hex');
 
 const QuestionSchema = new mongoose.Schema({
   // A question can belong to MANY exams — e.g. a Profit & Loss question is asked
@@ -27,6 +42,10 @@ const QuestionSchema = new mongoose.Schema({
   // The pre-validate hook below keeps it mirrored. Safe to remove once
   // scripts/migrateExamTypesToArray.js has run in every environment.
   examType:         { type: String, enum: EXAM_TYPES },
+  // Content-derived unique key (see computeDedupKey). Auto-set by the
+  // pre-validate hook on save()/insertMany(); the import scripts (bulkWrite,
+  // which skips hooks) set it explicitly. Unique-indexed below.
+  dedupKey:         { type: String, required: true },
   subject:          { type: String, required: true },
   topic:            { type: String, required: true },
   difficulty:       { type: String, enum: ['easy','medium','hard'], default: 'medium' },
@@ -71,11 +90,12 @@ const QuestionSchema = new mongoose.Schema({
 // NOTE: the old `{ questionText: 1, examType: 1, topic: 1 }` index must be
 // dropped once in each environment (autoIndex creates new indexes but never
 // drops old ones) — see scripts/dropLegacyQuestionIndex.ts.
-// Uniqueness is now per (stem, subject, topic). Exam membership lives in the
-// `examTypes` array, so a question shared across exams is ONE document. The old
-// `{ questionText.en, examType, topic }` unique index must be dropped once per
-// environment — scripts/migrateExamTypesToArray.js does that.
-QuestionSchema.index({ 'questionText.en': 1, subject: 1, topic: 1 }, { unique: true });
+// Uniqueness is enforced on the hashed `dedupKey` (a fixed ~40-byte digest of
+// stem|subject|topic) — small, immune to the 1024-byte index-key limit, and it
+// collapses near-duplicates. Exam membership lives in `examTypes`, so a question
+// shared across exams is ONE document. The older `{ questionText.en, ... }`
+// unique index is dropped by scripts/migrateAddDedupKey.js.
+QuestionSchema.index({ dedupKey: 1 }, { unique: true });
 
 // Eligibility lookups by exam (multikey over the array) + topic.
 QuestionSchema.index({ examTypes: 1, topic: 1, isActive: 1 });
@@ -93,6 +113,8 @@ QuestionSchema.index({ examTypes: 1, generationDate: 1 });
   if (Array.isArray(doc.examTypes) && doc.examTypes.length && !doc.examType) {
     doc.examType = doc.examTypes[0];
   }
+  // Always (re)derive the dedup key from current content.
+  doc.dedupKey = computeDedupKey(doc.questionText?.en, doc.subject, doc.topic);
   next();
 });
 
