@@ -40,6 +40,18 @@ const UserSchema = new mongoose.Schema({
     dateKey: { type: String },          // 'YYYY-MM-DD' (IST)
     count:   { type: Number, default: 0 },
   },
+  // --- Referral ---
+  // Every user gets a short, shareable code generated on first login. `sparse`
+  // so legacy rows without a code don't collide on the unique index (they get
+  // one lazily when they open the Refer & Earn screen).
+  referralCode:         { type: String, unique: true, sparse: true },
+  // The user who referred this account (set once, at signup, from their code).
+  referredBy:           { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  // INTERNAL accounting only — never surfaced to the user. Total premium days
+  // ever granted to this account from referral rewards. Used to enforce a
+  // silent lifetime cap (REFERRAL_LIFETIME_CAP_DAYS) so the reward economy
+  // can't run away, while the user keeps inviting freely.
+  referralRewardDays:   { type: Number, default: 0 },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
