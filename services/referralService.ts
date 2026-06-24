@@ -1,0 +1,292 @@
+import mongoose from 'mongoose';
+import { User } from '@/model/user.model';
+import { Referral } from '@/model/referral.model';
+import { UserDevice } from '@/model/userDevice.model';
+import { sendPushToUsers } from '@/services/pushService';
+
+/* ----------------------------------------------------------------------------
+ * Tunables. Days are near-zero marginal cost (AI questions are cheap), so we can
+ * be generous — but the LIFETIME cap keeps the reward economy bounded. The cap
+ * is INTERNAL: it is never returned to the client, so users keep inviting.
+ * -------------------------------------------------------------------------- */
+export const REWARD_DAYS_REFERRER = 15; // referrer earns this per friend who converts
+export const REWARD_DAYS_REFEREE = 15;  // the friend earns this on their first test
+export const REFERRAL_LIFETIME_CAP_DAYS = 45; // silent per-account lifetime cap
+export const DAILY_REFERRAL_REWARD_CAP = 5;   // max friends that can earn a referrer days / 24h
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Public web base used to build a shareable link (deep-link-ready later). */
+const WEB_BASE = (process.env.REFERRAL_WEB_BASE || 'https://examwarrior.app').replace(/\/+$/, '');
+
+/* ------------------------------- code helpers ----------------------------- */
+
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous O/0/I/1
+
+function randomCode(seed?: string): string {
+  // Up to 4 letters from the name (if any) + 4 random chars → e.g. AMIT7K3Q.
+  const prefix = (seed || '')
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '')
+    .slice(0, 4) || 'EW';
+  let rand = '';
+  for (let i = 0; i < 4; i++) {
+    rand += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+  }
+  return `${prefix}${rand}`;
+}
+
+/** Generates a referral code that isn't already taken. */
+export async function generateUniqueReferralCode(seed?: string): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = randomCode(seed);
+    const exists = await User.exists({ referralCode: code });
+    if (!exists) return code;
+  }
+  // Extremely unlikely fallback: guaranteed-unique suffix.
+  return `EW${Date.now().toString(36).toUpperCase()}`;
+}
+
+/** Returns the user's referral code, generating + persisting one if missing. */
+export async function ensureReferralCode(user: any): Promise<string> {
+  if (user.referralCode) return user.referralCode;
+  const code = await generateUniqueReferralCode(user.name);
+  user.referralCode = code;
+  await user.save();
+  return code;
+}
+
+/* ----------------------------- apply at signup ---------------------------- */
+
+/**
+ * Links a brand-new user to the referrer whose code they used. Records a
+ * 'registered' referral; no reward is granted yet (that happens on the friend's
+ * first daily test). Safe to call with a missing/invalid code — it just no-ops.
+ */
+export async function applyReferralAtSignup(opts: {
+  newUser: any;
+  code?: string | null;
+  deviceId?: string | null;
+  ip?: string | null;
+}): Promise<void> {
+  const raw = (opts.code || '').trim().toUpperCase();
+  if (!raw) return;
+
+  const referrer = await User.findOne({ referralCode: raw }).select('_id');
+  if (!referrer) return; // invalid code — ignore silently
+  if (referrer._id.equals(opts.newUser._id)) return; // can't refer yourself
+
+  try {
+    await Referral.create({
+      referrerId: referrer._id,
+      refereeId: opts.newUser._id,
+      code: raw,
+      status: 'registered',
+      signupDeviceId: opts.deviceId || undefined,
+      signupIp: opts.ip || undefined,
+    });
+    opts.newUser.referredBy = referrer._id;
+    await opts.newUser.save();
+  } catch (err: any) {
+    // Duplicate refereeId (already referred) — ignore.
+    if (err?.code !== 11000) console.error('[referral] applyReferralAtSignup', err?.message);
+  }
+}
+
+/* ------------------------------ grant helper ------------------------------ */
+
+/**
+ * Extends a user's premium by up to `requestedDays`, respecting the silent
+ * lifetime cap. Mutates the doc (caller persists). Returns the days ACTUALLY
+ * granted (0 once the account has hit the cap).
+ */
+function grantReferralDays(user: any, requestedDays: number): number {
+  const already = user.referralRewardDays || 0;
+  const remaining = Math.max(0, REFERRAL_LIFETIME_CAP_DAYS - already);
+  const grant = Math.min(requestedDays, remaining);
+  if (grant <= 0) return 0;
+
+  const now = new Date();
+  const hasFuture = user.subscriptionEndDate && new Date(user.subscriptionEndDate) > now;
+  const base = hasFuture ? new Date(user.subscriptionEndDate) : now;
+  user.subscriptionEndDate = new Date(base.getTime() + grant * DAY_MS);
+  user.subscriptionStatus = 'active';
+  user.referralRewardDays = already + grant;
+  return grant;
+}
+
+/* ------------------------- reward on first test --------------------------- */
+
+/**
+ * Called after a user submits their FIRST daily test. If they were referred and
+ * the referral hasn't been settled yet, runs fraud checks and credits both
+ * sides with free premium days. Idempotent + concurrency-safe (atomic claim).
+ * Best-effort: never throws into the test-submit path.
+ */
+export async function creditReferralOnFirstTest(
+  refereeId: string,
+  ctx: { deviceId?: string | null; ip?: string | null } = {},
+): Promise<void> {
+  try {
+    const pending = await Referral.findOne({ refereeId, status: 'registered' });
+    if (!pending) return;
+
+    // Atomically claim so two concurrent submits can't both reward.
+    const claimed = await Referral.findOneAndUpdate(
+      { _id: pending._id, status: 'registered' },
+      { status: 'active', rewardedAt: new Date() },
+      { new: true },
+    );
+    if (!claimed) return; // someone else already processed it
+
+    const referrer = await User.findById(claimed.referrerId);
+    const referee = await User.findById(refereeId);
+    if (!referrer || !referee) {
+      claimed.status = 'blocked';
+      claimed.blockedReason = 'missing_user';
+      await claimed.save();
+      return;
+    }
+
+    // --- Fraud check: self-referral (hard block, no reward to anyone) ---
+    if (referrer._id.equals(referee._id)) {
+      claimed.status = 'blocked';
+      claimed.blockedReason = 'self_referral';
+      await claimed.save();
+      return;
+    }
+
+    // --- Fraud check: same physical device (hard block) ---
+    // IP is deliberately NOT used as a blocker: coaching centres, hostels and
+    // CGNAT mean many legitimate friends share one IP. Device identity is the
+    // signal that actually indicates one person making two accounts.
+    const devId = claimed.signupDeviceId || ctx.deviceId;
+    if (devId) {
+      const sharedDevice = await UserDevice.exists({ userId: referrer._id, deviceId: devId });
+      if (sharedDevice) {
+        claimed.status = 'blocked';
+        claimed.blockedReason = 'device_match';
+        await claimed.save();
+        return;
+      }
+    }
+
+    // --- Soft cap: velocity. Over the daily cap, the FRIEND still earns their
+    // bonus (they're a real student), but the referrer earns 0 for this one. ---
+    const since = new Date(Date.now() - DAY_MS);
+    const rewardedToday = await Referral.countDocuments({
+      referrerId: referrer._id,
+      status: 'active',
+      rewardDaysReferrer: { $gt: 0 },
+      rewardedAt: { $gte: since },
+    });
+    const referrerEligible = rewardedToday < DAILY_REFERRAL_REWARD_CAP;
+
+    // --- Grant days (each side bounded by the silent lifetime cap) ---
+    const refereeDays = grantReferralDays(referee, REWARD_DAYS_REFEREE);
+    await referee.save();
+
+    let referrerDays = 0;
+    if (referrerEligible) {
+      referrerDays = grantReferralDays(referrer, REWARD_DAYS_REFERRER);
+      if (referrerDays > 0) await referrer.save();
+    }
+
+    claimed.rewardDaysReferrer = referrerDays;
+    claimed.rewardDaysReferee = refereeDays;
+    if (!referrerEligible) claimed.blockedReason = 'velocity_cap';
+    await claimed.save();
+
+    // Best-effort, language-aware nudges to both sides.
+    notifyReward(referrer, referrerDays, 'referrer').catch(() => {});
+    notifyReward(referee, refereeDays, 'referee').catch(() => {});
+  } catch (err: any) {
+    console.error('[referral] creditReferralOnFirstTest', err?.message);
+  }
+}
+
+/* ------------------------------ notifications ----------------------------- */
+
+async function notifyReward(user: any, days: number, role: 'referrer' | 'referee') {
+  if (!days || days <= 0) return;
+  const hi = (user.appLanguage || 'english') === 'hindi';
+  const title = hi ? `🎉 ${days} din free premium mile!` : `🎉 You earned ${days} free days!`;
+  const body = role === 'referrer'
+    ? (hi
+      ? 'Aapke dost ne pehla test diya. Aur doston ko refer karke aur din kamayein!'
+      : 'Your friend took their first test. Refer more friends to earn more days!')
+    : (hi
+      ? 'Welcome! Aapko bonus premium din mile. Roz test dekar aage badhein.'
+      : 'Welcome! Your bonus premium days are added. Keep practising daily.');
+  await sendPushToUsers([user._id.toString()], {
+    title, body, data: { type: 'referral' }, channelId: 'updates',
+  });
+}
+
+/* ------------------------------- overview --------------------------------- */
+
+const BADGES: { min: number; en: string; hi: string }[] = [
+  { min: 25, en: 'Mentor', hi: 'मेंटर' },
+  { min: 10, en: 'Gold', hi: 'गोल्ड' },
+  { min: 5, en: 'Silver', hi: 'सिल्वर' },
+  { min: 3, en: 'Bronze', hi: 'ब्रॉन्ज़' },
+  { min: 1, en: 'Starter', hi: 'स्टार्टर' },
+];
+
+function badgeFor(joined: number, hi: boolean): string | null {
+  const b = BADGES.find((x) => joined >= x.min);
+  return b ? (hi ? b.hi : b.en) : null;
+}
+
+function maskName(referee: any): string {
+  if (referee?.name && referee.name.trim()) return referee.name.trim();
+  const p = String(referee?.phone || '');
+  return p ? `Warrior •${p.slice(-4)}` : 'Warrior';
+}
+
+/**
+ * Everything the Refer & Earn screen needs: the user's code, a ready-to-share
+ * link + message (localised to their app language), aggregate stats and the
+ * list of invited friends with their status. Never exposes the lifetime cap.
+ */
+export async function getReferralOverview(userId: string) {
+  const user = await User.findById(userId);
+  if (!user) throw new Error('user_not_found');
+
+  const code = await ensureReferralCode(user);
+  const hi = (user.appLanguage || 'english') === 'hindi';
+  const shareUrl = `${WEB_BASE}/r/${code}`;
+  const shareMessage = hi
+    ? `📚 Exam Warrior par roz AI mock test do aur apni kamzor topics sudharo! Mere code se join karo — dono ko ${REWARD_DAYS_REFEREE} din free premium milega 🎁\n${shareUrl}`
+    : `📚 Crack your govt exam with daily AI mock tests on Exam Warrior! Join with my code — we BOTH get ${REWARD_DAYS_REFEREE} days free premium 🎁\n${shareUrl}`;
+
+  const referrals = await Referral.find({ referrerId: userId })
+    .sort({ createdAt: -1 })
+    .populate('refereeId', 'name phone')
+    .lean();
+
+  const friends = referrals.map((r: any) => ({
+    name: maskName(r.refereeId),
+    // 'active' (took first test → you earned days) vs 'registered' (joined, not
+    // tested yet). 'blocked' is hidden as 'registered' so we don't reveal fraud
+    // logic to the user.
+    status: r.status === 'active' ? 'active' : 'registered',
+    joinedAt: r.createdAt,
+  }));
+
+  const totalJoined = friends.filter((f) => f.status === 'active').length;
+  const daysEarned = referrals.reduce((sum: number, r: any) => sum + (r.rewardDaysReferrer || 0), 0);
+
+  return {
+    code,
+    shareUrl,
+    shareMessage,
+    perReferralDays: REWARD_DAYS_REFERRER,
+    refereeBonusDays: REWARD_DAYS_REFEREE,
+    totalInvited: friends.length,
+    totalJoined,
+    daysEarned,
+    badge: badgeFor(totalJoined, hi),
+    friends,
+  };
+}
