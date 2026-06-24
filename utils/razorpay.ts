@@ -102,3 +102,39 @@ export const createUpiAutopayCharge = (params: UpiAutopayChargeParams) => {
   // and a `recurring` flag, which the typed SDK signature does not model.
   return getRazorpay().payments.createUpi(body as any);
 };
+
+/** Params for creating a UPI Autopay authorization via the intent flow. */
+export interface UpiIntentChargeParams {
+  amount: number; // in paise
+  email: string;
+  contact: string;
+  subscriptionId: string;
+  ip?: string;
+  referer?: string;
+  userAgent?: string;
+}
+
+/**
+ * Creates a UPI Autopay mandate authorization via the UPI "intent" flow (no
+ * typed VPA). Razorpay returns an intent URL (`link`, e.g. "upi://...") that the
+ * app uses two ways:
+ *   1. launch a chosen installed UPI app (Google Pay / PhonePe / Paytm…), and
+ *   2. render as a QR code the user can scan from another device.
+ * Requires S2S / Custom Checkout enabled on the account.
+ */
+export const createUpiIntentCharge = (params: UpiIntentChargeParams) => {
+  const body: Record<string, unknown> = {
+    amount: params.amount,
+    currency: 'INR',
+    email: params.email,
+    contact: params.contact,
+    subscription_id: params.subscriptionId,
+    recurring: 1,
+    method: 'upi',
+    ip: params.ip || '127.0.0.1',
+    referer: params.referer || 'https://examwarrior.in',
+    user_agent: params.userAgent || 'ExamWarriorApp',
+    upi: { flow: 'intent' },
+  };
+  return getRazorpay().payments.createUpi(body as any);
+};

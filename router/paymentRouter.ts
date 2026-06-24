@@ -4,6 +4,7 @@ import {
   verifyPayment,
   validateVpa,
   initiateUpiAutopay,
+  initiateUpiIntent,
   getPaymentStatus,
   getPaymentHistory,
   razorpayWebhook,
@@ -23,6 +24,9 @@ router.post('/validate-vpa', authMiddleware, validateVpa);
 
 // Custom Checkout: initiate UPI Autopay (recurring e-mandate) on a typed VPA
 router.post('/upi/autopay', authMiddleware, initiateUpiAutopay);
+
+// Custom Checkout: initiate UPI Autopay via intent (for app-launch + QR)
+router.post('/upi/intent', authMiddleware, initiateUpiIntent);
 
 // Razorpay webhook — THE trusted source of payment confirmation
 // No authMiddleware — Razorpay calls this directly

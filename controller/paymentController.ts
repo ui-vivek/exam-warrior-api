@@ -13,6 +13,7 @@ import {
   getRazorpay,
   validateVpa as razorpayValidateVpa,
   createUpiAutopayCharge,
+  createUpiIntentCharge,
   isS2SUnavailable,
   razorpayErrorInfo,
 } from '@/utils/razorpay';
@@ -333,6 +334,70 @@ export const initiateUpiAutopay = asyncHandler(async (req: LangRequest, res: Res
       return res.json({ success: true, data: { available: false, status: 'unavailable' } });
     }
     console.error('[Payment] UPI Autopay error:', info);
+    throw new AppError('upi_autopay_failed', 400, 'upi_autopay_failed');
+  }
+});
+
+/**
+ * POST /payments/upi/intent
+ * Creates a UPI Autopay authorization via the intent flow for an already-created
+ * subscription. Returns an intent URL the app uses to (1) open a chosen
+ * installed UPI app and (2) render a scannable QR code. The user approves the
+ * mandate in their UPI app; the webhook activates Premium.
+ *
+ * Body: { subscriptionId }. Responds 200 with an `available` flag so the app can
+ * fall back when S2S is not enabled.
+ */
+export const initiateUpiIntent = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const subscriptionId = String(req.body?.subscriptionId ?? '').trim();
+  if (!subscriptionId) throw new AppError('subscription_not_found', 400, 'subscription_not_found');
+
+  const payment = await Payment.findOne({ userId, razorpaySubscriptionId: subscriptionId });
+  if (!payment) throw new AppError('subscription_not_found', 404, 'subscription_not_found');
+
+  const planType = payment.planType || 'monthly';
+  const amount = PLAN_AMOUNT_PAISE[planType] ?? PLAN_AMOUNT_PAISE.monthly;
+
+  const user = await User.findById(userId);
+  const phone = user?.phone ?? '';
+  const email = phone ? `${phone}@examwarrior.app` : 'user@examwarrior.app';
+
+  try {
+    const result: any = await createUpiIntentCharge({
+      amount,
+      email,
+      contact: phone,
+      subscriptionId,
+      ip: req.ip,
+      referer: (req.headers['referer'] as string) || 'https://examwarrior.in',
+      userAgent: (req.headers['user-agent'] as string) || 'ExamWarriorApp',
+    });
+
+    await Payment.updateOne(
+      { _id: payment._id },
+      { method: 'upi', razorpayPaymentId: result?.razorpay_payment_id ?? payment.razorpayPaymentId },
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        available: true,
+        status: 'pending',
+        paymentId: result?.razorpay_payment_id ?? null,
+        intentUrl: result?.link ?? null,
+        message: getMessage('upi_mandate_pending', req.lang),
+      },
+    });
+  } catch (err: any) {
+    const info = razorpayErrorInfo(err);
+    if (isS2SUnavailable(err)) {
+      console.warn('[Payment] UPI intent unavailable (S2S not enabled):', info.description);
+      return res.json({ success: true, data: { available: false, status: 'unavailable' } });
+    }
+    console.error('[Payment] UPI intent error:', info);
     throw new AppError('upi_autopay_failed', 400, 'upi_autopay_failed');
   }
 });
