@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { User } from '@/model/user.model';
 import { Referral } from '@/model/referral.model';
 import { UserDevice } from '@/model/userDevice.model';
+import { Test } from '@/model/test.model';
 import { sendPushToUsers } from '@/services/pushService';
 
 /* ----------------------------------------------------------------------------
@@ -289,4 +290,88 @@ export async function getReferralOverview(userId: string) {
     badge: badgeFor(totalJoined, hi),
     friends,
   };
+}
+
+/* --------------------------- validate / apply ----------------------------- */
+
+/** Display name for a referrer — their name, or null (UI shows a generic ✓). */
+function referrerDisplay(u: any): string | null {
+  return u?.name && u.name.trim() ? u.name.trim() : null;
+}
+
+/**
+ * Live check for the onboarding screen: is this a real, usable referral code?
+ * `requestingUserId` lets us reject the user's own code.
+ */
+export async function validateReferralCode(code: string, requestingUserId?: string) {
+  const raw = (code || '').trim().toUpperCase();
+  if (!raw) return { valid: false };
+
+  const referrer = await User.findOne({ referralCode: raw }).select('_id name');
+  if (!referrer) return { valid: false };
+  if (requestingUserId && referrer._id.equals(requestingUserId)) {
+    return { valid: false, self: true };
+  }
+  return { valid: true, referrerName: referrerDisplay(referrer) };
+}
+
+/**
+ * Applies a referral code to an existing (new) account from the onboarding
+ * screen — the post-signup equivalent of applyReferralAtSignup. Guards against
+ * retro-claiming: only before the user has taken any daily test, and only once.
+ */
+export async function applyReferralCode(opts: {
+  userId: string;
+  code: string;
+  deviceId?: string | null;
+  ip?: string | null;
+}) {
+  const raw = (opts.code || '').trim().toUpperCase();
+  if (!raw) return { applied: false, reason: 'empty' as const };
+
+  const user = await User.findById(opts.userId);
+  if (!user) return { applied: false, reason: 'user_not_found' as const };
+
+  // Already linked — idempotent success (don't allow switching referrers).
+  if (user.referredBy) {
+    const existing = await Referral.findOne({ refereeId: user._id })
+      .populate('referrerId', 'name')
+      .lean();
+    return {
+      applied: true,
+      alreadyApplied: true,
+      referrerName: existing ? referrerDisplay((existing as any).referrerId) : null,
+    };
+  }
+
+  // A referral can only be claimed before the first daily test — stops existing,
+  // active users from retro-adding a code.
+  const tookDaily = await Test.exists({
+    userId: user._id,
+    type: { $ne: 'practice' },
+    completed: true,
+  });
+  if (tookDaily) return { applied: false, reason: 'window_closed' as const };
+
+  const referrer = await User.findOne({ referralCode: raw }).select('_id name');
+  if (!referrer) return { applied: false, reason: 'invalid' as const };
+  if (referrer._id.equals(user._id)) return { applied: false, reason: 'self' as const };
+
+  try {
+    await Referral.create({
+      referrerId: referrer._id,
+      refereeId: user._id,
+      code: raw,
+      status: 'registered',
+      signupDeviceId: opts.deviceId || undefined,
+      signupIp: opts.ip || undefined,
+    });
+    user.referredBy = referrer._id;
+    await user.save();
+    return { applied: true, referrerName: referrerDisplay(referrer) };
+  } catch (err: any) {
+    if (err?.code === 11000) return { applied: true, alreadyApplied: true };
+    console.error('[referral] applyReferralCode', err?.message);
+    return { applied: false, reason: 'error' as const };
+  }
 }
