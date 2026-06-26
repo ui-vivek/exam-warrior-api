@@ -15,6 +15,7 @@ import { MASTERY_THRESHOLD } from '@/services/analyticsService';
 import { getTodayIST } from '@/utils/dateHelper';
 import { env } from '@/lib/config';
 import { cacheGet, cacheSet } from '@/utils/cache';
+import { awardBadges, rankBadges, topBadgeOf } from '@/services/badgeService';
 
 export const listUsers = asyncHandler(async (req: LangRequest, res: Response) => {
   const limit = parseInt(req.query.limit as string) || 50;
@@ -307,6 +308,7 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
         name: '$user.name',
         examType: '$user.examType',
         state: '$user.state',
+        badges: '$user.badges',
       },
     },
     ]);
@@ -323,6 +325,8 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
       totalScore: row.totalScore,
       tests: row.tests,
       isMe: row._id.equals(myObjectId),
+      // The most prestigious badge this user owns, shown as a flair on the row.
+      topBadge: topBadgeOf(((row.badges || []) as any[]).map((b: any) => b.badgeId)),
     }));
 
   // ---- All India ----
@@ -386,6 +390,11 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
     }
   }
 
+  // Award rank-tier badges for the standing the user just achieved (idempotent,
+  // fire-and-forget so it never delays the leaderboard response).
+  const earned = rankBadges(myRank, stateRank);
+  if (earned.length) awardBadges(userId, earned).catch(() => {});
+
   res.status(200).json({
     success: true,
     data: {
@@ -400,4 +409,21 @@ export const getLeaderboard = asyncHandler(async (req: LangRequest, res: Respons
       stateRankChange,
     },
   });
+});
+
+/**
+ * GET /users/badges — the achievement badges the current user has earned.
+ * Display metadata (icon/colour/title) lives in the app's badge catalog; this
+ * returns just the earned ids + when they were earned.
+ */
+export const getBadges = asyncHandler(async (req: LangRequest, res: Response) => {
+  const userId = req.userId;
+  if (!userId) throw new AppError('unauthorized', 401);
+
+  const user: any = await User.findById(userId).select('badges').lean();
+  const badges = ((user?.badges || []) as any[])
+    .map((b: any) => ({ badgeId: b.badgeId, earnedAt: b.earnedAt }))
+    .sort((a, b) => new Date(b.earnedAt).getTime() - new Date(a.earnedAt).getTime());
+
+  res.json({ success: true, data: badges });
 });

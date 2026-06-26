@@ -8,6 +8,7 @@ import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
 import { LangRequest } from '@/middleware/languageMiddleware';
 import { notifyClassroomResult } from '@/services/notificationService';
+import { awardBadges } from '@/services/badgeService';
 import { getTodayIST } from '@/utils/dateHelper';
 
 // Daily room-creation (host) limits. Trial counts as paid so new users get the
@@ -325,6 +326,11 @@ export const submitRoomScore = asyncHandler(async (req: LangRequest, res: Respon
       notifyClassroomResult(code, recipients).catch((e) =>
         console.error('[Room] result push failed:', e.message),
       );
+      // Battle Winner badge for the top scorer (only a real win, score > 0).
+      const winner = rankParticipants(updated.participants)[0];
+      if (winner && (winner.score || 0) > 0) {
+        awardBadges(winner.userId.toString(), ['battle_winner']).catch(() => {});
+      }
     }
   }
 

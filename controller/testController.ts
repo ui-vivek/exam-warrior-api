@@ -7,7 +7,8 @@ import { Bookmark } from '@/model/bookmark.model';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { getTodayIST } from '@/utils/dateHelper';
-import { updateTopicStats, updateStreak } from '@/services/analyticsService';
+import { updateTopicStats, updateStreak, MASTERY_THRESHOLD } from '@/services/analyticsService';
+import { awardBadges } from '@/services/badgeService';
 import { creditReferralOnFirstTest } from '@/services/referralService';
 import { asyncHandler } from '@/utils/asyncHandler';
 import { AppError } from '@/utils/AppError';
@@ -570,6 +571,12 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
     timeTakenSec,
   };
 
+  // Status badges earned on this submit (idempotent; awarded fire-and-forget).
+  const earnedBadges: string[] = [];
+  if (totalQuestionsCount > 0 && score === totalQuestionsCount) {
+    earnedBadges.push('perfect_score');
+  }
+
   // Report how much this practice drill moved the topic's accuracy.
   if (isPractice && test.subject && test.topic) {
     const after = await UserTopicStat
@@ -589,7 +596,11 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
       afterLevel: masteryLevel(afterAcc),
       totalAttempted: after?.totalAttempted || 0,
     };
+    // Mastering the drilled topic earns the Topic Master badge.
+    if (afterAcc >= MASTERY_THRESHOLD) earnedBadges.push('topic_master');
   }
+
+  if (earnedBadges.length) awardBadges(userId, earnedBadges).catch(() => {});
 
   res.json({ success: true, data: responseData });
 });

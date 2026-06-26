@@ -9,6 +9,7 @@ import roomRouter from '@/router/roomRouter';
 import deviceRouter from '@/router/deviceRouter';
 import notificationRouter from '@/router/notificationRouter';
 import referralRouter from '@/router/referralRouter';
+import leagueRouter from '@/router/leagueRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -25,5 +26,6 @@ router.use('/rooms', roomRouter);
 router.use('/devices', deviceRouter);
 router.use('/notifications', notificationRouter);
 router.use('/referrals', referralRouter);
+router.use('/leagues', leagueRouter);
 
 export default router;

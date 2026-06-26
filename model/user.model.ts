@@ -52,6 +52,15 @@ const UserSchema = new mongoose.Schema({
   // silent lifetime cap (REFERRAL_LIFETIME_CAP_DAYS) so the reward economy
   // can't run away, while the user keeps inviting freely.
   referralRewardDays:   { type: Number, default: 0 },
+  // --- Rewards ---
+  // Earned achievement badges (status rewards). Display metadata lives in the
+  // app's badge catalog; the server only stores which badge ids are unlocked.
+  badges: [{
+    badgeId:  { type: String, required: true },
+    earnedAt: { type: Date, default: Date.now },
+  }],
+  // Weekly league tier (promotes/demotes via the weekly league cron).
+  leagueTier: { type: String, enum: ['bronze','silver','gold','platinum','diamond'], default: 'bronze' },
 }, { timestamps: true });
 
 export const User = mongoose.model('User', UserSchema);
