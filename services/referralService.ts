@@ -48,13 +48,35 @@ export async function generateUniqueReferralCode(seed?: string): Promise<string>
   return `EW${Date.now().toString(36).toUpperCase()}`;
 }
 
-/** Returns the user's referral code, generating + persisting one if missing. */
+/**
+ * Returns the user's referral code, generating + persisting one if missing.
+ * Collision-safe: the `referralCode` field is uniquely indexed, so a save could
+ * still throw a duplicate-key error if two new users happen to mint the same
+ * code at the same instant. We catch that and retry with a fresh code rather
+ * than letting it bubble up (which, at signup, would break the user's login).
+ */
 export async function ensureReferralCode(user: any): Promise<string> {
   if (user.referralCode) return user.referralCode;
-  const code = await generateUniqueReferralCode(user.name);
-  user.referralCode = code;
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const code = await generateUniqueReferralCode(user.name);
+    user.referralCode = code;
+    try {
+      await user.save();
+      return code;
+    } catch (err: any) {
+      if (err?.code === 11000) {
+        user.referralCode = undefined; // collided — try a new one
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  // Extremely unlikely fallback: a guaranteed-unique, time-based code.
+  user.referralCode = `EW${Date.now().toString(36).toUpperCase()}`;
   await user.save();
-  return code;
+  return user.referralCode;
 }
 
 /* ----------------------------- apply at signup ---------------------------- */
@@ -163,8 +185,18 @@ export async function creditReferralOnFirstTest(
     // signal that actually indicates one person making two accounts.
     const devId = claimed.signupDeviceId || ctx.deviceId;
     if (devId) {
+      // (a) The friend signed up on a device already registered to the referrer
+      //     (needs push/FCM, so empty until that's live).
       const sharedDevice = await UserDevice.exists({ userId: referrer._id, deviceId: devId });
-      if (sharedDevice) {
+      // (b) The SAME device has already earned this referrer a reward — classic
+      //     one-phone farming. Works today, with no dependency on push tokens.
+      const deviceAlreadyUsed = await Referral.exists({
+        referrerId: referrer._id,
+        signupDeviceId: devId,
+        status: 'active',
+        _id: { $ne: claimed._id },
+      });
+      if (sharedDevice || deviceAlreadyUsed) {
         claimed.status = 'blocked';
         claimed.blockedReason = 'device_match';
         await claimed.save();

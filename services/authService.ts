@@ -3,7 +3,7 @@ import { env } from '@/lib/config';
 import { User } from '@/model/user.model';
 import { OtpService } from './otpService';
 import { AppError } from '@/utils/AppError';
-import { generateUniqueReferralCode, applyReferralAtSignup } from './referralService';
+import { ensureReferralCode, applyReferralAtSignup } from './referralService';
 
 export class AuthService {
   static async requestOtp(phone: string) {
@@ -46,10 +46,12 @@ export class AuthService {
         trialStartDate: new Date(),
         examType: 'SSC',
         preferredLanguage: (preferredLanguage === 'hindi' ? 'hindi' : 'english'),
-        // Give every new account its own shareable code up front.
-        referralCode: await generateUniqueReferralCode(),
       });
       isNewUser = true;
+
+      // Assign the account's own shareable code AFTER creation, so a (rare)
+      // code collision can never make user creation — and thus login — fail.
+      await ensureReferralCode(user);
 
       // Link to the referrer (if a valid code was used). Best-effort — never
       // blocks login. Reward is granted later, on the friend's first test.
