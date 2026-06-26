@@ -444,6 +444,35 @@ export const submitTest = asyncHandler(async (req: LangRequest, res: Response) =
   if (!test) throw new AppError('test_not_found', 404);
   if (test.completed) throw new AppError('test_already_submitted', 400);
 
+  // Anti-cheat void: the client ended this attempt for repeated app-switching.
+  // Lock it as completed with score 0 and skip analytics/streak entirely, so
+  // the attempt is "used" but contributes nothing.
+  if (req.body.disqualified === true) {
+    const voided = await Test.findOneAndUpdate(
+      { _id: test._id, userId, completed: false },
+      {
+        score: 0,
+        timeTakenSec: 0,
+        completed: true,
+        disqualified: true,
+        answers: [],
+        updatedAt: new Date(),
+      },
+      { new: true },
+    );
+    if (!voided) throw new AppError('test_already_submitted', 400);
+    return res.json({
+      success: true,
+      data: {
+        score: 0,
+        total: test.totalQuestions,
+        accuracyPct: '0.0',
+        timeTakenSec: 0,
+        disqualified: true,
+      },
+    });
+  }
+
   // Fetch full questions with correct answers
   const questions = await Question.find({ _id: { $in: test.questions } }).lean();
   const questionMap: any = {};

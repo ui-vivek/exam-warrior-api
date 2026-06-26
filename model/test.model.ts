@@ -18,6 +18,9 @@ const TestSchema = new mongoose.Schema({
   totalQuestions:  { type: Number, default: 20 },
   timeTakenSec:    { type: Number },
   completed:       { type: Boolean, default: false },
+  // Voided by the anti-cheat proctor (repeated app-switching). Scored 0 and
+  // excluded from analytics; the attempt is still "used" (can't be retaken).
+  disqualified:    { type: Boolean, default: false },
   // Last question index the user was on (for resuming an in-progress test).
   currentIndex:    { type: Number, default: 0 },
   // 'daily' = the once-a-day mock test; 'practice' = focused weak-topic drill.
