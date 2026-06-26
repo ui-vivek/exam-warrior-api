@@ -132,18 +132,22 @@ export const sendTrialEndingReminders = async () => {
     _id: { $in: ids },
     subscriptionStatus: 'trial',
   })
-    .select('trialStartDate')
+    .select('trialStartDate appLanguage')
     .lean();
 
   const now = Date.now();
   const endingSoon: string[] = [];
-  const expired: string[] = [];
+  const expiredHi: string[] = [];
+  const expiredEn: string[] = [];
 
   for (const u of trialUsers) {
     if (!u.trialStartDate) continue;
     const msLeft = new Date(u.trialStartDate).getTime() + TRIAL_DAYS * DAY - now;
-    if (msLeft <= 2 * DAY && msLeft > 1 * DAY) endingSoon.push(u._id.toString());
-    else if (msLeft <= 0 && msLeft > -1 * DAY) expired.push(u._id.toString());
+    if (msLeft <= 2 * DAY && msLeft > 1 * DAY) {
+      endingSoon.push(u._id.toString());
+    } else if (msLeft <= 0 && msLeft > -1 * DAY) {
+      ((u.appLanguage === 'hindi') ? expiredHi : expiredEn).push(u._id.toString());
+    }
   }
 
   let sent = 0;
@@ -159,17 +163,35 @@ export const sendTrialEndingReminders = async () => {
     });
     sent += res.sent; failed += res.failed; tokens += res.tokens;
   }
-  if (expired.length) {
-    const res = await sendPushToUsers(expired, {
-      title: 'Your free trial has ended',
-      body: 'Subscribe from ₹99/month to continue your daily practice without a break.',
-      data: { type: 'subscription' },
+
+  // Trial just ended → lead with the FREE path (refer a friend for 15 days) and
+  // mention Premium as the alternative. Language-aware; deep-links to referral.
+  if (expiredHi.length) {
+    const res = await sendPushToUsers(expiredHi, {
+      title: 'ट्रायल खत्म — 15 दिन फ्री पाएं 🎁',
+      body: 'एक दोस्त को रेफ़र करें: जब वो पहला टेस्ट दे, दोनों को 15 दिन फ्री प्रीमियम मिलेगा। या ₹99/माह से सब्सक्राइब करें।',
+      data: { type: 'referral' },
+      channelId: 'updates',
+    });
+    sent += res.sent; failed += res.failed; tokens += res.tokens;
+  }
+  if (expiredEn.length) {
+    const res = await sendPushToUsers(expiredEn, {
+      title: 'Trial ended — unlock 15 free days 🎁',
+      body: 'Refer a friend: when they take their first test, you BOTH get 15 days free premium. Or subscribe from ₹99/month.',
+      data: { type: 'referral' },
       channelId: 'updates',
     });
     sent += res.sent; failed += res.failed; tokens += res.tokens;
   }
 
-  return { endingSoon: endingSoon.length, expired: expired.length, sent, failed, tokens };
+  return {
+    endingSoon: endingSoon.length,
+    expired: expiredHi.length + expiredEn.length,
+    sent,
+    failed,
+    tokens,
+  };
 };
 
 /**
