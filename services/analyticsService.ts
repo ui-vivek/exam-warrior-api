@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { UserTopicStat } from '@/model/userTopicStat.model';
 import { User } from '@/model/user.model';
 import { getTodayIST, getYesterdayIST } from '@/utils/dateHelper';
+import { awardBadges, streakBadges } from '@/services/badgeService';
 
 /**
  * At/above this recent accuracy a topic is treated as "mastered" and drops off
@@ -177,4 +178,8 @@ export const updateStreak = async (userId: string) => {
   });
 
   console.log(`[Streak] User: ${userId}, New Streak: ${newStreak}, Today IST: ${todayIST}`);
+
+  // Streak milestone badges (7/30/100 days).
+  const badges = streakBadges(newStreak);
+  if (badges.length) awardBadges(userId, badges).catch(() => {});
 };

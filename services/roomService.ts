@@ -1,5 +1,6 @@
 import { Room } from '@/model/room.model';
 import { notifyClassroomResult } from '@/services/notificationService';
+import { awardBadges } from '@/services/badgeService';
 
 /**
  * Finalizes classroom rooms whose shared timer has elapsed. This is the ONLY
@@ -43,6 +44,14 @@ export const finalizeExpiredRooms = async () => {
     const recipients = (room.participants || []).map((p: any) => p.userId.toString());
     const res = await notifyClassroomResult(room.code, recipients);
     notified += res.sent;
+
+    // Battle Winner badge for the top scorer who actually scored (> 0).
+    const ranked = [...(room.participants || [])]
+      .filter((p: any) => (p.score ?? 0) > 0)
+      .sort((a: any, b: any) => (b.score || 0) - (a.score || 0));
+    if (ranked.length) {
+      awardBadges(ranked[0].userId.toString(), ['battle_winner']).catch(() => {});
+    }
   }
 
   return { finalized, notified };
