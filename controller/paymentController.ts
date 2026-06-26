@@ -103,6 +103,13 @@ export const createSubscription = asyncHandler(async (req: LangRequest, res: Res
     plan_id: planId,
     customer_notify: 1,
     total_count: planType === 'monthly' ? 120 : 10,
+    // Attach our internal user id + phone so every subscription is traceable
+    // back to the app user in the Razorpay dashboard and in webhook payloads.
+    notes: {
+      app_user_id: String(userId),
+      phone: existingUser?.phone ?? '',
+      plan_type: planType,
+    },
   });
 
   // Create Subscription record in MongoDB
