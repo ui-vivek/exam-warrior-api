@@ -11,6 +11,7 @@ import notificationRouter from '@/router/notificationRouter';
 import referralRouter from '@/router/referralRouter';
 import leagueRouter from '@/router/leagueRouter';
 import instituteRouter from '@/router/instituteRouter';
+import assessmentRouter from '@/router/assessmentRouter';
 
 const express = require('express') as typeof import('express');
 
@@ -29,5 +30,6 @@ router.use('/notifications', notificationRouter);
 router.use('/referrals', referralRouter);
 router.use('/leagues', leagueRouter);
 router.use('/institutes', instituteRouter);
+router.use('/assessments', assessmentRouter);
 
 export default router;

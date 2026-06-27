@@ -7,6 +7,7 @@ import {
   sendReferralNudges,
 } from '@/services/notificationService';
 import { finalizeExpiredRooms } from '@/services/roomService';
+import { finalizeClosedAssessments } from '@/services/assessmentService';
 import { processLeagues } from '@/services/leagueService';
 
 /**
@@ -55,6 +56,8 @@ const JOBS: Job[] = [
   { envKey: 'CRON_REFERRAL_TIME', defaultSchedule: '0 19 * * 6', label: 'referral-nudge', run: sendReferralNudges },
   // Closes rooms whose shared timer ran out (auto-submits no-shows). Runs often.
   { envKey: 'CRON_ROOM_FINALIZE_TIME', defaultSchedule: '* * * * *', label: 'finalize-rooms', run: finalizeExpiredRooms, quiet: true },
+  // Closes institute assessments whose window elapsed (auto-submits no-shows).
+  { envKey: 'CRON_ASSESSMENT_FINALIZE_TIME', defaultSchedule: '* * * * *', label: 'finalize-assessments', run: finalizeClosedAssessments, quiet: true },
   // Weekly league promote/demote — Monday 00:30 IST.
   { envKey: 'CRON_LEAGUE_TIME', defaultSchedule: '30 0 * * 1', label: 'league-weekly', run: processLeagues },
 ];
